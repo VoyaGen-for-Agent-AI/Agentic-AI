@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "agentic-ai"
+version = "0.1.0"
+description = ""
+authors = ["malingsuo <djsojdn1285@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.138.1"
+uvicorn = "^0.49.0"
+langchain = "^1.3.11"
+langgraph = "^1.2.6"
+langfuse = "^4.12.0"
+pydantic = "^2.13.4"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.1.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
