@@ -1,6 +1,7 @@
+from typing import Literal
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI # 假設你用 OpenAI
-from core.state import AgentState
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
 
 # 1. 定義 Prompt
 SUPERVISOR_PROMPT = """
@@ -14,13 +15,19 @@ SUPERVISOR_PROMPT = """
 只能從 ["weather", "travel", "movie", "FINISH"] 中選擇一個回傳，不要回覆其他多餘的文字。
 """
 
-# 2. 建立路由判斷邏輯
+# 2. 定義嚴格的輸出資料模型 (Pydantic)
+class Route(BaseModel):
+    next_step: Literal["weather", "travel", "movie", "FINISH"] = Field(
+        description="根據使用者意圖決定的下一步路由"
+    )
+
+# 3. 建立大腦節點邏輯
 def create_supervisor_node(llm: ChatOpenAI):
     prompt = ChatPromptTemplate.from_messages([
         ("system", SUPERVISOR_PROMPT),
         ("user", "{input}")
     ])
     
-    # 這裡會串接 LLM，並限制它只能輸出我們規定的幾個單字
-    supervisor_chain = prompt | llm 
+    # 這裡的 .with_structured_output(Route)會強制 OpenAI 只吐出符合 Route 格式的 JSON。
+    supervisor_chain = prompt | llm.with_structured_output(Route)
     return supervisor_chain
