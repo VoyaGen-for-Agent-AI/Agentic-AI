@@ -17,7 +17,7 @@ app = FastAPI()
 # 1. 初始化 LLM 與大腦邏輯
 llm = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",  #把請求導向 OpenRouter
-    model="meta-llama/llama-3.2-3b-instruct:free",
+    model="liquid/lfm-2.5-1.2b-thinking:free",
     api_key=os.getenv("OPENAI_API_KEY")# type: ignore
 ) 
 supervisor_chain = create_supervisor_node(llm)
