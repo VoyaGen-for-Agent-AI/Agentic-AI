@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
-
+from langfuse.langchain import CallbackHandler
 from core.state import AgentState
 from agents.supervisor import create_supervisor_node
 from agents.workers.mock_workers import weather_node, travel_node, movie_node
@@ -17,10 +17,13 @@ app = FastAPI()
 # 1. 初始化 LLM 與大腦邏輯
 llm = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",  #把請求導向 OpenRouter
-    model="liquid/lfm-2.5-1.2b-thinking:free",
+    model="google/gemma-4-26b-a4b-it:free",
     api_key=os.getenv("OPENAI_API_KEY")# type: ignore
 ) 
 supervisor_chain = create_supervisor_node(llm)
+
+# 1. 初始化 Langfuse Callback Handler（v4 從環境變數讀取 LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST）
+langfuse_handler = CallbackHandler()
 
 # 定義一個外層函式來處理狀態流轉
 def supervisor_node(state: AgentState):
@@ -67,7 +70,11 @@ app_graph = workflow.compile()
 # 建立一個測試用的 API 端點
 @app.get("/chat/{query}")
 def chat_test(query: str):
+    # 將 handler 透過 config 傳入 invoke
+    # 這會確保整個 Graph 的執行過程都被 Langfuse 記錄下來
+    config = {"callbacks": [langfuse_handler]}
+    
     # 將使用者的問題包裝成 HumanMessage 送進去跑
-    result = app_graph.invoke({"messages": [HumanMessage(content=query)]})# type: ignore
+    result = app_graph.invoke({"messages": [HumanMessage(content=query)]}, config)# type: ignore
     # 回傳 Graph 跑完後，陣列裡最後一句 AI 生成的話
     return {"response": result["messages"][-1].content}
