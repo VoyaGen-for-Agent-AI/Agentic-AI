@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
@@ -9,12 +10,15 @@ from agents.workers.mock_workers import weather_node, travel_node, movie_node
 from dotenv import load_dotenv
 
 load_dotenv() # 這行會自動把 .env 裡的金鑰載入系統中
+if not os.getenv("OPENAI_API_KEY"):
+    print("警告：找不到 OPENAI_API_KEY！")
 app = FastAPI()
 
 # 1. 初始化 LLM 與大腦邏輯
 llm = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",  #把請求導向 OpenRouter
-    model="nvidia/nemotron-nano-12b-v2-vl:free"
+    model="meta-llama/llama-3.2-3b-instruct:free",
+    api_key=os.getenv("OPENAI_API_KEY")# type: ignore
 ) 
 supervisor_chain = create_supervisor_node(llm)
 
@@ -25,7 +29,7 @@ def supervisor_node(state: AgentState):
     # 呼叫大腦進行判斷
     result = supervisor_chain.invoke({"input": user_input})
     # 把判斷結果寫回 State 的 next_step 欄位
-    return {"next_step": result.next_step}
+    return {"next_step": result.next_step}# type: ignore
 
 # 2. 構建 Graph 狀態機
 workflow = StateGraph(AgentState)
@@ -64,6 +68,6 @@ app_graph = workflow.compile()
 @app.get("/chat/{query}")
 def chat_test(query: str):
     # 將使用者的問題包裝成 HumanMessage 送進去跑
-    result = app_graph.invoke({"messages": [HumanMessage(content=query)]})
+    result = app_graph.invoke({"messages": [HumanMessage(content=query)]})# type: ignore
     # 回傳 Graph 跑完後，陣列裡最後一句 AI 生成的話
     return {"response": result["messages"][-1].content}
