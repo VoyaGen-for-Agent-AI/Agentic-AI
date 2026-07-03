@@ -6,7 +6,14 @@ from langchain_core.messages import HumanMessage
 from langfuse.langchain import CallbackHandler
 from core.state import AgentState
 from agents.supervisor import create_supervisor_node
-from agents.workers.mock_workers import weather_node, travel_node, movie_node
+from agents.workers.mock_workers import (
+    weather_node, 
+    travel_node, 
+    booking_node, 
+    financial_node, 
+    scheduler_node, 
+    safety_node
+)
 from dotenv import load_dotenv
 
 load_dotenv() # 這行會自動把 .env 裡的金鑰載入系統中
@@ -41,7 +48,10 @@ workflow = StateGraph(AgentState)
 workflow.add_node("supervisor", supervisor_node)
 workflow.add_node("weather", weather_node)
 workflow.add_node("travel", travel_node)
-workflow.add_node("movie", movie_node)
+workflow.add_node("booking", booking_node)
+workflow.add_node("financial", financial_node)
+workflow.add_node("scheduler", scheduler_node)
+workflow.add_node("safety", safety_node)
 
 # 設定程式進入點
 workflow.set_entry_point("supervisor")
@@ -54,7 +64,10 @@ workflow.add_conditional_edges(
     {
         "weather": "weather",
         "travel": "travel",
-        "movie": "movie",
+        "booking": "booking",
+        "financial": "financial",
+        "scheduler": "scheduler",
+        "safety": "safety",
         "FINISH": END
     }
 )
@@ -62,7 +75,10 @@ workflow.add_conditional_edges(
 # 設定專員執行完後，就結束流程 (回到 END)
 workflow.add_edge("weather", END)
 workflow.add_edge("travel", END)
-workflow.add_edge("movie", END)
+workflow.add_edge("booking", END)
+workflow.add_edge("financial", END)
+workflow.add_edge("scheduler", END)
+workflow.add_edge("safety", END)
 
 # 4. 編譯成可執行的應用程式
 app_graph = workflow.compile()
