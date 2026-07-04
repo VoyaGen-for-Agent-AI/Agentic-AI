@@ -33,3 +33,57 @@ Poetry 會自動讀取 `poetry.lock`，並為你建立獨立的虛擬環境，�
 **🔥 啟動 FastAPI 本機開發伺服器：**
 `poetry run uvicorn main:app --reload`
 註:這個還沒有處理
+
+## Sprint 1 Role B 交付說明
+
+Role B 本週負責 Action & Sandbox Integration 的最小可交付骨架，Sprint 1 先以 Mock Worker 完成可運作流程，不串接真實外部 API。
+
+目前已完成：
+
+- Weather / Movie / Travel 三個 mock workers。
+- Workers 接收 `AgentState`，並回傳 LangGraph 可合併的 state update。
+- Workers 回傳 `messages` 與未來可替換真 API 的結構化結果：
+  - `weather_result`
+  - `movie_result`
+  - `travel_result`
+- `final_response_node` 可將 worker result 整理成 `final_answer`。
+- LangGraph workflow 已接成 `Supervisor -> Mock Worker -> Final Response -> END`。
+- Langfuse callback 已接入主要 `app_graph.invoke` 流程。
+
+### Role B 測試方式
+
+一般單元測試不需要任何 API key，也不會呼叫真實 Weather / Movie / Travel API：
+
+`poetry run pytest`
+
+Mock worker 測試：
+
+`poetry run pytest tests/test_mock_workers.py`
+
+Final response 測試：
+
+`poetry run pytest tests/test_final_response.py`
+
+### Langfuse Trace 手動驗證
+
+若要確認 Langfuse 後台可看到 `User -> Supervisor -> Mock Worker -> Final Response` trace，請先在 `.env` 設定：
+
+- `OPENAI_API_KEY`
+- `LANGFUSE_PUBLIC_KEY`
+- `LANGFUSE_SECRET_KEY`
+- `LANGFUSE_HOST`
+
+然後執行：
+
+`poetry run python scripts/test_langfuse_trace.py`
+
+腳本會使用測試 query「幫我查天氣」，執行現有 workflow，印出 final answer，並提醒到 Langfuse dashboard 查看 trace。
+
+### Sprint 1 暫不處理
+
+以下項目保留到 Sprint 2 或後續：
+
+- 真實 Weather / Movie / Travel API 串接。
+- E2B sandbox 真實程式執行。
+- Critic Agent。
+- Tavily / OpenWeather / Google Maps / TMDB 等外部服務整合。
