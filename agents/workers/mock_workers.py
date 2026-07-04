@@ -2,25 +2,43 @@ from core.state import AgentState
 from langchain_core.messages import AIMessage
 
 def weather_node(state: AgentState):
-    user_input = state["messages"][-1].content
+    weather_result = {
+        "location": "Taipei",
+        "condition": "rainy",
+        "rain_probability": 80,
+        "temperature": 28,
+    }
     return {
+        "weather_result": weather_result,
         "messages": [
-            AIMessage(content=f"[Mock][Weather] 已收到：{user_input}。台北明天天氣晴朗，降雨機率 10%。")
+            AIMessage(content="[Mock][Weather] Taipei 目前為 rainy，降雨機率 80%，氣溫 28 度。")
         ]
     }
 
 def travel_node(state: AgentState):
-    user_input = state["messages"][-1].content
+    travel_result = {
+        "destination": "Taipei",
+        "duration": "1 day",
+        "spots": ["Taipei 101", "Chiang Kai-shek Memorial Hall", "Ximending"],
+        "transportation": "MRT",
+    }
     return {
+        "travel_result": travel_result,
         "messages": [
-            AIMessage(content=f"[Mock][Travel] 已收到：{user_input}。已為您排好陽明山一日遊的完美行程！")
+            AIMessage(content="[Mock][Travel] Taipei 1 day 行程包含 Taipei 101、Chiang Kai-shek Memorial Hall、Ximending，建議搭 MRT。")
         ]
     }
 
 def movie_node(state: AgentState):
-    user_input = state["messages"][-1].content
+    movie_result = {
+        "title": "Inception",
+        "genre": "sci-fi",
+        "rating": 8.8,
+        "recommendation_reason": "適合喜歡燒腦劇情的使用者",
+    }
     return {
+        "movie_result": movie_result,
         "messages": [
-            AIMessage(content=f"[Mock][Movie] 已收到：{user_input}。推薦您觀看 Netflix 的強檔影集！")
+            AIMessage(content="[Mock][Movie] 推薦 Inception，類型是 sci-fi，評分 8.8，適合喜歡燒腦劇情的使用者。")
         ]
     }
