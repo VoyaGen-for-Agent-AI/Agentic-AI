@@ -40,12 +40,15 @@ Role B 本週負責 Action & Sandbox Integration 的最小可交付骨架，Spri
 
 目前已完成：
 
-- Weather / Movie / Travel 三個 mock workers。
+- Weather / Travel / Booking / Financial / Scheduler / Safety 六個 mock workers。
 - Workers 接收 `AgentState`，並回傳 LangGraph 可合併的 state update。
 - Workers 回傳 `messages` 與未來可替換真 API 的結構化結果：
   - `weather_result`
-  - `movie_result`
   - `travel_result`
+  - `booking_result`
+  - `financial_result`
+  - `scheduler_result`
+  - `safety_result`
 - `final_response_node` 可將 worker result 整理成 `final_answer`。
 - LangGraph workflow 已接成 `Supervisor -> Mock Worker -> Final Response -> END`。
 - Langfuse callback 已接入主要 `app_graph.invoke` 流程。

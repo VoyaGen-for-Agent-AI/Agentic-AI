@@ -10,24 +10,28 @@ class AgentState(TypedDict):
     user_query: str
 
     # Supervisor 決定的任務路由
-    route: Literal["weather", "movie", "travel", "multi", "unknown"]
+    route: Literal["weather", "travel", "booking", "financial", "scheduler", "safety", "multi", "unknown"]
 
     # 目前正在處理的任務描述
     current_task: str
-    
-    # 紀錄 Supervisor 決定要派發給誰 (例如: "weather", "travel", "movie", 或 "FINISH")
+
+    # 紀錄 Supervisor 決定要派發給誰 (例如: "travel", 或 "FINISH")
     next_step: str
 
     # Mock workers 的結構化結果
     weather_result: dict[str, Any]
-    movie_result: dict[str, Any]
     travel_result: dict[str, Any]
+    booking_result: dict[str, Any]
+    financial_result: dict[str, Any]
+    scheduler_result: dict[str, Any]
+    safety_result: dict[str, Any]
 
     # Sandbox / action execution 相關欄位
     generated_code: str
     sandbox_stdout: str
     sandbox_stderr: str
     
+    # --- 系統防護機制 ---
     # 紀錄發生錯誤時的追蹤訊息
     error_traceback: str
 

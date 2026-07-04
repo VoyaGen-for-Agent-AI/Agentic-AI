@@ -20,8 +20,11 @@ def make_state(route: str = "unknown", current_task: str = "", **results):
         "current_task": current_task,
         "next_step": next_step,
         "weather_result": results.get("weather_result", {}),
-        "movie_result": results.get("movie_result", {}),
         "travel_result": results.get("travel_result", {}),
+        "booking_result": results.get("booking_result", {}),
+        "financial_result": results.get("financial_result", {}),
+        "scheduler_result": results.get("scheduler_result", {}),
+        "safety_result": results.get("safety_result", {}),
         "generated_code": "",
         "sandbox_stdout": "",
         "sandbox_stderr": "",
@@ -40,8 +43,10 @@ def assert_final_response(result):
     assert result["messages"][0].content == result["final_answer"]
 
 
-def test_result_formatters_include_sprint_1_routes():
-    assert {"weather", "movie", "travel"}.issubset(RESULT_FORMATTERS.keys())
+def test_result_formatters_include_all_agent_routes():
+    assert {
+        "weather", "travel", "booking", "financial", "scheduler", "safety",
+    }.issubset(RESULT_FORMATTERS.keys())
 
 
 def test_weather_result_generates_final_answer():
@@ -62,24 +67,6 @@ def test_weather_result_generates_final_answer():
     assert "降雨機率 80%" in result["final_answer"]
 
 
-def test_movie_result_generates_final_answer():
-    result = final_response_node(
-        make_state(
-            route="movie",
-            movie_result={
-                "title": "Inception",
-                "genre": "sci-fi",
-                "rating": 8.8,
-                "recommendation_reason": "適合喜歡燒腦劇情的使用者",
-            },
-        )
-    )
-
-    assert_final_response(result)
-    assert "Inception" in result["final_answer"]
-    assert "sci-fi" in result["final_answer"]
-
-
 def test_travel_result_generates_final_answer():
     result = final_response_node(
         make_state(
@@ -98,6 +85,75 @@ def test_travel_result_generates_final_answer():
     assert "MRT" in result["final_answer"]
 
 
+def test_booking_result_generates_final_answer():
+    result = final_response_node(
+        make_state(
+            route="booking",
+            booking_result={
+                "location": "Taipei 101",
+                "hotels": ["W Hotel Taipei", "Robertson Suites"],
+                "restaurants": ["Din Tai Fung", "Shin Yeh"],
+                "price_comparison": "住宿均價 NT$3,500/晚，已篩選出評價最高的 2 間",
+            },
+        )
+    )
+
+    assert_final_response(result)
+    assert "W Hotel Taipei" in result["final_answer"]
+    assert "Din Tai Fung" in result["final_answer"]
+
+
+def test_financial_result_generates_final_answer():
+    result = final_response_node(
+        make_state(
+            route="financial",
+            financial_result={
+                "budget_total": 20000.0,
+                "budget_remaining": 12500.0,
+                "currency": "TWD",
+                "exchange_rate_to_usd": 0.031,
+            },
+        )
+    )
+
+    assert_final_response(result)
+    assert "12500.0" in result["final_answer"]
+    assert "USD" in result["final_answer"]
+
+
+def test_scheduler_result_generates_final_answer():
+    result = final_response_node(
+        make_state(
+            route="scheduler",
+            scheduler_result={
+                "itinerary": ["Taipei 101", "Ximending", "Chiang Kai-shek Memorial Hall"],
+                "total_travel_time_minutes": 95,
+                "algorithm": "TSP nearest-neighbor",
+            },
+        )
+    )
+
+    assert_final_response(result)
+    assert "Taipei 101" in result["final_answer"]
+    assert "95 分鐘" in result["final_answer"]
+
+
+def test_safety_result_generates_final_answer():
+    result = final_response_node(
+        make_state(
+            route="safety",
+            safety_result={
+                "status": "ok",
+                "issues": [],
+                "fallback_suggestion": "目前行程無異常，若迷路可撥打當地緊急聯絡電話。",
+            },
+        )
+    )
+
+    assert_final_response(result)
+    assert "ok" in result["final_answer"]
+
+
 def test_empty_result_generates_fallback_answer():
     result = final_response_node(make_state(route="weather"))
 
@@ -109,18 +165,18 @@ def test_current_task_can_select_formatter_when_route_is_unknown():
     result = final_response_node(
         make_state(
             route="unknown",
-            current_task="movie",
-            movie_result={
-                "title": "Inception",
-                "genre": "sci-fi",
-                "rating": 8.8,
-                "recommendation_reason": "適合喜歡燒腦劇情的使用者",
+            current_task="booking",
+            booking_result={
+                "location": "Taipei 101",
+                "hotels": ["W Hotel Taipei", "Robertson Suites"],
+                "restaurants": ["Din Tai Fung", "Shin Yeh"],
+                "price_comparison": "住宿均價 NT$3,500/晚，已篩選出評價最高的 2 間",
             },
         )
     )
 
     assert_final_response(result)
-    assert "Inception" in result["final_answer"]
+    assert "W Hotel Taipei" in result["final_answer"]
 
 
 def test_next_step_weather_can_select_formatter():
@@ -141,24 +197,6 @@ def test_next_step_weather_can_select_formatter():
     assert "Taipei" in result["final_answer"]
 
 
-def test_next_step_movie_can_select_formatter():
-    result = final_response_node(
-        make_state(
-            route="unknown",
-            next_step="movie",
-            movie_result={
-                "title": "Inception",
-                "genre": "sci-fi",
-                "rating": 8.8,
-                "recommendation_reason": "適合喜歡燒腦劇情的使用者",
-            },
-        )
-    )
-
-    assert_final_response(result)
-    assert "Inception" in result["final_answer"]
-
-
 def test_next_step_travel_can_select_formatter():
     result = final_response_node(
         make_state(
@@ -169,6 +207,23 @@ def test_next_step_travel_can_select_formatter():
                 "duration": "1 day",
                 "spots": ["Taipei 101", "Chiang Kai-shek Memorial Hall", "Ximending"],
                 "transportation": "MRT",
+            },
+        )
+    )
+
+    assert_final_response(result)
+    assert "Taipei 101" in result["final_answer"]
+
+
+def test_next_step_scheduler_can_select_formatter():
+    result = final_response_node(
+        make_state(
+            route="unknown",
+            next_step="scheduler",
+            scheduler_result={
+                "itinerary": ["Taipei 101", "Ximending", "Chiang Kai-shek Memorial Hall"],
+                "total_travel_time_minutes": 95,
+                "algorithm": "TSP nearest-neighbor",
             },
         )
     )
