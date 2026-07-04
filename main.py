@@ -6,13 +6,14 @@ from langchain_core.messages import HumanMessage
 from langfuse.langchain import CallbackHandler
 from core.state import AgentState
 from agents.supervisor import create_supervisor_node
+from agents.final_response import final_response_node
 from agents.workers.mock_workers import (
-    weather_node, 
-    travel_node, 
-    booking_node, 
-    financial_node, 
-    scheduler_node, 
-    safety_node
+    weather_node,
+    travel_node,
+    booking_node,
+    financial_node,
+    scheduler_node,
+    safety_node,
 )
 from dotenv import load_dotenv
 
@@ -52,6 +53,7 @@ workflow.add_node("booking", booking_node)
 workflow.add_node("financial", financial_node)
 workflow.add_node("scheduler", scheduler_node)
 workflow.add_node("safety", safety_node)
+workflow.add_node("final_response", final_response_node)
 
 # 設定程式進入點
 workflow.set_entry_point("supervisor")
@@ -72,13 +74,14 @@ workflow.add_conditional_edges(
     }
 )
 
-# 設定專員執行完後，就結束流程 (回到 END)
-workflow.add_edge("weather", END)
-workflow.add_edge("travel", END)
-workflow.add_edge("booking", END)
-workflow.add_edge("financial", END)
-workflow.add_edge("scheduler", END)
-workflow.add_edge("safety", END)
+# 設定專員執行完後，交給 final_response 整理最終回覆
+workflow.add_edge("weather", "final_response")
+workflow.add_edge("travel", "final_response")
+workflow.add_edge("booking", "final_response")
+workflow.add_edge("financial", "final_response")
+workflow.add_edge("scheduler", "final_response")
+workflow.add_edge("safety", "final_response")
+workflow.add_edge("final_response", END)
 
 # 4. 編譯成可執行的應用程式
 app_graph = workflow.compile()
