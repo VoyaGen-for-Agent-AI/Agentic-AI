@@ -44,7 +44,7 @@ FALLBACK_ANSWER = "目前無法根據已有結果產生回覆，請提供更明�
 
 
 def _select_route(state: AgentState) -> str:
-    for route in (state.get("route"), state.get("current_task")):
+    for route in (state.get("route"), state.get("current_task"), state.get("next_step")):
         if route in RESULT_FORMATTERS:
             return route
     return ""

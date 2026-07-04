@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage
 from langfuse.langchain import CallbackHandler
 from core.state import AgentState
 from agents.supervisor import create_supervisor_node
+from agents.final_response import final_response_node
 from agents.workers.mock_workers import weather_node, travel_node, movie_node
 from dotenv import load_dotenv
 
@@ -42,6 +43,7 @@ workflow.add_node("supervisor", supervisor_node)
 workflow.add_node("weather", weather_node)
 workflow.add_node("travel", travel_node)
 workflow.add_node("movie", movie_node)
+workflow.add_node("final_response", final_response_node)
 
 # 設定程式進入點
 workflow.set_entry_point("supervisor")
@@ -59,10 +61,11 @@ workflow.add_conditional_edges(
     }
 )
 
-# 設定專員執行完後，就結束流程 (回到 END)
-workflow.add_edge("weather", END)
-workflow.add_edge("travel", END)
-workflow.add_edge("movie", END)
+# 設定專員執行完後，交給 final_response 整理最終回覆
+workflow.add_edge("weather", "final_response")
+workflow.add_edge("travel", "final_response")
+workflow.add_edge("movie", "final_response")
+workflow.add_edge("final_response", END)
 
 # 4. 編譯成可執行的應用程式
 app_graph = workflow.compile()
