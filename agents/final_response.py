@@ -13,13 +13,6 @@ def format_weather_response(result: dict[str, Any]) -> str:
     )
 
 
-def format_movie_response(result: dict[str, Any]) -> str:
-    return (
-        f"推薦電影 {result['title']}，類型是 {result['genre']}，"
-        f"評分 {result['rating']}。推薦原因：{result['recommendation_reason']}。"
-    )
-
-
 def format_travel_response(result: dict[str, Any]) -> str:
     spots = "、".join(result["spots"])
     return (
@@ -28,16 +21,54 @@ def format_travel_response(result: dict[str, Any]) -> str:
     )
 
 
+def format_booking_response(result: dict[str, Any]) -> str:
+    hotels = "、".join(result["hotels"])
+    restaurants = "、".join(result["restaurants"])
+    return (
+        f"{result['location']} 周邊推薦住宿：{hotels}；推薦餐廳：{restaurants}。"
+        f"{result['price_comparison']}。"
+    )
+
+
+def format_financial_response(result: dict[str, Any]) -> str:
+    return (
+        f"總預算 {result['currency']} {result['budget_total']}，"
+        f"剩餘可用預算 {result['currency']} {result['budget_remaining']}"
+        f"（約合 USD {result['budget_remaining'] * result['exchange_rate_to_usd']:.2f}）。"
+    )
+
+
+def format_scheduler_response(result: dict[str, Any]) -> str:
+    itinerary = " → ".join(result["itinerary"])
+    return (
+        f"最佳行程順序：{itinerary}，"
+        f"總移動時間約 {result['total_travel_time_minutes']} 分鐘（{result['algorithm']}）。"
+    )
+
+
+def format_safety_response(result: dict[str, Any]) -> str:
+    if result["issues"]:
+        issues = "、".join(result["issues"])
+        return f"偵測到狀況：{issues}。建議：{result['fallback_suggestion']}"
+    return f"行程狀態：{result['status']}。{result['fallback_suggestion']}"
+
+
 RESULT_FORMATTERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "weather": format_weather_response,
-    "movie": format_movie_response,
     "travel": format_travel_response,
+    "booking": format_booking_response,
+    "financial": format_financial_response,
+    "scheduler": format_scheduler_response,
+    "safety": format_safety_response,
 }
 
 RESULT_KEYS = {
     "weather": "weather_result",
-    "movie": "movie_result",
     "travel": "travel_result",
+    "booking": "booking_result",
+    "financial": "financial_result",
+    "scheduler": "scheduler_result",
+    "safety": "safety_result",
 }
 
 FALLBACK_ANSWER = "目前無法根據已有結果產生回覆，請提供更明確的任務或稍後再試。"
