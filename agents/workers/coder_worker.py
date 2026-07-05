@@ -4,16 +4,35 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from core.state import AgentState
 from prompts.coder_prompt import CODER_SYSTEM_PROMPT 
+import time
 
 def coder_node(state: AgentState):
     print("[Coder Agent] 接收到需求，開始撰寫程式碼...")
+    time.sleep(5)
     
     # 1. 初始化 Coder 的專屬大腦
     llm = ChatOpenAI(
         base_url="https://openrouter.ai/api/v1",
-        model="https://openrouter.ai/google/gemma-4-26b-a4b-it:free",
+        #model="google/gemma-4-26b-a4b-it:free",
+        model="liquid/lfm-2.5-1.2b-thinking:free",
+        #model="meta-llama/llama-3.3-70b-instruct:free",
+        #model="openai/gpt-oss-20b:free",
         api_key=os.getenv("OPENAI_API_KEY") # type: ignore
     )
+    ##############付費#################
+    # llm = ChatOpenAI(
+    #     base_url="https://openrouter.ai/api/v1",
+    #     model="meta-llama/llama-3.1-8b-instruct",
+    #     api_key=os.getenv("OPENAI_API_KEY"), # type: ignore
+    #     extra_body={
+    #         "provider": {
+    #             "order": ["DeepInfra","NovitaAI"],
+    #             "ignore": ["Cloudflare","Groq"],
+    #             "allow_fallbacks": True
+    #         }
+    #     } 
+    # )
+    ################################# 
 
     # 2. 抓取上一位專員 (如 Weather Worker) 提出的需求
     last_request = state["messages"][-1].content

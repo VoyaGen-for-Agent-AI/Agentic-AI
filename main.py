@@ -27,9 +27,26 @@ app = FastAPI()
 # 1. 初始化 LLM 與大腦邏輯
 llm = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",  #把請求導向 OpenRouter
-    model="google/gemma-4-26b-a4b-it:free",
+    #model="google/gemma-4-26b-a4b-it:free",
+    model="liquid/lfm-2.5-1.2b-thinking:free",
+    #model="meta-llama/llama-3.3-70b-instruct:free",
+    #model="openai/gpt-oss-20b:free",
     api_key=os.getenv("OPENAI_API_KEY")# type: ignore
-) 
+)
+##############付費#################
+    # llm = ChatOpenAI(
+    #     base_url="https://openrouter.ai/api/v1",
+    #     model="meta-llama/llama-3.1-8b-instruct",
+    #     api_key=os.getenv("OPENAI_API_KEY"), # type: ignore
+    #     extra_body={
+    #         "provider": {
+    #             "order": ["DeepInfra","NovitaAI"],
+    #             "ignore": ["Cloudflare","Groq"],
+    #             "allow_fallbacks": True
+    #         }
+    #     } 
+    # )
+################################# 
 supervisor_chain = create_supervisor_node(llm)
 
 # 1. 初始化 Langfuse Callback Handler（v4 從環境變數讀取 LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST）
