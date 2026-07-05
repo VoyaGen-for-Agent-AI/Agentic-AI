@@ -1,4 +1,4 @@
-from typing import TypedDict, Annotated, Sequence, Literal, Any
+from typing import TypedDict, Annotated, Sequence, Literal, Any, Dict, Optional
 from langchain_core.messages import BaseMessage
 import operator
 
@@ -20,6 +20,7 @@ class AgentState(TypedDict):
 
     # Mock workers 的結構化結果
     weather_result: dict[str, Any]
+    movie_result: dict[str, Any]
     travel_result: dict[str, Any]
     booking_result: dict[str, Any]
     financial_result: dict[str, Any]
@@ -34,6 +35,9 @@ class AgentState(TypedDict):
     # --- 系統防護機制 ---
     # 紀錄發生錯誤時的追蹤訊息
     error_traceback: str
+
+    # Critic Agent 的錯誤分類結果
+    critic_result: Optional[Dict[str, Any]]
 
     # 執行狀態
     execution_status: Literal["success", "error", "timeout"]
