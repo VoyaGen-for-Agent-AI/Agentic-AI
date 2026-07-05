@@ -7,8 +7,10 @@ from langfuse.langchain import CallbackHandler
 from core.state import AgentState
 from agents.supervisor import create_supervisor_node
 from agents.final_response import final_response_node
+from agents.workers.weather_worker import weather_node
+from agents.workers.coder_worker import coder_node
 from agents.workers.mock_workers import (
-    weather_node,
+    #weather_node,
     travel_node,
     booking_node,
     financial_node,
@@ -25,9 +27,26 @@ app = FastAPI()
 # 1. 初始化 LLM 與大腦邏輯
 llm = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",  #把請求導向 OpenRouter
-    model="google/gemma-4-26b-a4b-it:free",
+    #model="google/gemma-4-26b-a4b-it:free",
+    model="liquid/lfm-2.5-1.2b-thinking:free",
+    #model="meta-llama/llama-3.3-70b-instruct:free",
+    #model="openai/gpt-oss-20b:free",
     api_key=os.getenv("OPENAI_API_KEY")# type: ignore
-) 
+)
+##############付費#################
+    # llm = ChatOpenAI(
+    #     base_url="https://openrouter.ai/api/v1",
+    #     model="meta-llama/llama-3.1-8b-instruct",
+    #     api_key=os.getenv("OPENAI_API_KEY"), # type: ignore
+    #     extra_body={
+    #         "provider": {
+    #             "order": ["DeepInfra","NovitaAI"],
+    #             "ignore": ["Cloudflare","Groq"],
+    #             "allow_fallbacks": True
+    #         }
+    #     } 
+    # )
+################################# 
 supervisor_chain = create_supervisor_node(llm)
 
 # 1. 初始化 Langfuse Callback Handler（v4 從環境變數讀取 LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST）
@@ -48,6 +67,7 @@ workflow = StateGraph(AgentState)
 # 加入所有節點
 workflow.add_node("supervisor", supervisor_node)
 workflow.add_node("weather", weather_node)
+workflow.add_node("coder", coder_node)
 workflow.add_node("travel", travel_node)
 workflow.add_node("booking", booking_node)
 workflow.add_node("financial", financial_node)
@@ -73,9 +93,27 @@ workflow.add_conditional_edges(
         "FINISH": END
     }
 )
+#動態路由：天氣專員產出規格後，判斷下一步 (交給 coder)
+workflow.add_conditional_edges(
+    "weather",
+    lambda x: x.get("next_step", "FINISH"),
+    {
+        "coder": "coder",
+        "FINISH": END
+    }
+)
+#動態路由：工程師寫完 Code 後，判斷下一步 (先導向 END 測試)
+workflow.add_conditional_edges(
+    "coder",
+    lambda x: x.get("next_step", "FINISH"),
+    {
+        "e2b_sandbox": END, # 因為 E2B 還沒接，先讓他結束，測試能不能印出程式碼
+        "FINISH": END
+    }
+)
 
 # 設定專員執行完後，交給 final_response 整理最終回覆
-workflow.add_edge("weather", "final_response")
+#workflow.add_edge("weather", "final_response")
 workflow.add_edge("travel", "final_response")
 workflow.add_edge("booking", "final_response")
 workflow.add_edge("financial", "final_response")
@@ -95,5 +133,14 @@ def chat_test(query: str):
     
     # 將使用者的問題包裝成 HumanMessage 送進去跑
     result = app_graph.invoke({"messages": [HumanMessage(content=query)]}, config)# type: ignore
+    ################################################
+    #測試階段：把產生的程式碼印出來看看！
+    generated_code = result.get("generated_code", "")
+    if generated_code:
+        print("\n\n===== Coder 產出的程式碼 =====")
+        print(generated_code)
+        print("==============================\n\n")
+   ################################################
+   
     # 回傳 Graph 跑完後，陣列裡最後一句 AI 生成的話
     return {"response": result["messages"][-1].content}
