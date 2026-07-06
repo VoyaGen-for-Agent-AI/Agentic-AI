@@ -8,10 +8,11 @@ from core.state import AgentState
 from agents.supervisor import create_supervisor_node
 from agents.final_response import final_response_node
 from agents.workers.weather_worker import weather_node
+from agents.workers.travel_worker import travel_node
 from agents.workers.coder_worker import coder_node
 from agents.workers.mock_workers import (
     #weather_node,
-    travel_node,
+    #travel_node,
     booking_node,
     financial_node,
     scheduler_node,
@@ -28,24 +29,24 @@ app = FastAPI()
 llm = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",  #把請求導向 OpenRouter
     #model="google/gemma-4-26b-a4b-it:free",
-    model="liquid/lfm-2.5-1.2b-thinking:free",
-    #model="meta-llama/llama-3.3-70b-instruct:free",
+    #model="liquid/lfm-2.5-1.2b-thinking:free",
+    model="meta-llama/llama-3.3-70b-instruct:free",
     #model="openai/gpt-oss-20b:free",
     api_key=os.getenv("OPENAI_API_KEY")# type: ignore
 )
 ##############付費#################
-    # llm = ChatOpenAI(
-    #     base_url="https://openrouter.ai/api/v1",
-    #     model="meta-llama/llama-3.1-8b-instruct",
-    #     api_key=os.getenv("OPENAI_API_KEY"), # type: ignore
-    #     extra_body={
-    #         "provider": {
-    #             "order": ["DeepInfra","NovitaAI"],
-    #             "ignore": ["Cloudflare","Groq"],
-    #             "allow_fallbacks": True
-    #         }
-    #     } 
-    # )
+# llm = ChatOpenAI(
+#     base_url="https://openrouter.ai/api/v1",
+#     model="meta-llama/llama-3.1-8b-instruct",
+#     api_key=os.getenv("OPENAI_API_KEY"), # type: ignore
+#     extra_body={
+#         "provider": {
+#             "order": ["DeepInfra","NovitaAI"],
+#             "ignore": ["Cloudflare","Groq"],
+#             "allow_fallbacks": True
+#         }
+#     } 
+# )
 ################################# 
 supervisor_chain = create_supervisor_node(llm)
 
@@ -102,6 +103,15 @@ workflow.add_conditional_edges(
         "FINISH": END
     }
 )
+workflow.add_conditional_edges(
+    "travel",
+    lambda x: x.get("next_step", "FINISH"),
+    {
+        "coder": "coder",
+        "FINISH": END
+    }
+)
+
 #動態路由：工程師寫完 Code 後，判斷下一步 (先導向 END 測試)
 workflow.add_conditional_edges(
     "coder",
@@ -114,7 +124,7 @@ workflow.add_conditional_edges(
 
 # 設定專員執行完後，交給 final_response 整理最終回覆
 #workflow.add_edge("weather", "final_response")
-workflow.add_edge("travel", "final_response")
+#workflow.add_edge("travel", "final_response")
 workflow.add_edge("booking", "final_response")
 workflow.add_edge("financial", "final_response")
 workflow.add_edge("scheduler", "final_response")
