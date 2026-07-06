@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage
 import time
 
 def test_run():
-    print("🚀 開始測試天氣轉寫 Code 流程...")
+    print("🚀 開始測試旅遊轉寫 Code 流程...")
     
     initial_state = {
         "messages": [HumanMessage(content="幫我排台北兩天一夜行程，我想去故宮博物院，還要吃鼎泰豐。")],
