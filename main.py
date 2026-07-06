@@ -10,12 +10,16 @@ from agents.final_response import final_response_node
 from agents.workers.weather_worker import weather_node
 from agents.workers.travel_worker import travel_node
 from agents.workers.coder_worker import coder_node
+from agents.workers.traffic_worker import traffic_node
+from agents.workers.budget_worker import budget_node
+from agents.workers.schedule_worker import schedule_node
+from agents.workers.booking_worker import booking_node
 from agents.workers.mock_workers import (
     #weather_node,
     #travel_node,
-    booking_node,
-    financial_node,
-    scheduler_node,
+    #booking_node,
+    #financial_node,
+    #scheduler_node,
     safety_node,
 )
 from dotenv import load_dotenv
@@ -71,9 +75,10 @@ workflow.add_node("weather", weather_node)
 workflow.add_node("coder", coder_node)
 workflow.add_node("travel", travel_node)
 workflow.add_node("booking", booking_node)
-workflow.add_node("financial", financial_node)
-workflow.add_node("scheduler", scheduler_node)
+workflow.add_node("budget", budget_node)
+workflow.add_node("scheduler", schedule_node)
 workflow.add_node("safety", safety_node)
+workflow.add_node("traffic", traffic_node)
 workflow.add_node("final_response", final_response_node)
 
 # 設定程式進入點
@@ -88,9 +93,10 @@ workflow.add_conditional_edges(
         "weather": "weather",
         "travel": "travel",
         "booking": "booking",
-        "financial": "financial",
+        "budget": "budget",
         "scheduler": "scheduler",
         "safety": "safety",
+        "traffic": "traffic",
         "FINISH": END
     }
 )
@@ -111,6 +117,39 @@ workflow.add_conditional_edges(
         "FINISH": END
     }
 )
+workflow.add_conditional_edges(
+    "traffic",
+    lambda x: x.get("next_step", "FINISH"),
+    {
+        "coder": "coder",
+        "FINISH": END
+    }
+)
+workflow.add_conditional_edges(
+    "budget",
+    lambda x: x.get("next_step", "FINISH"),
+    {
+        "coder": "coder",
+        "FINISH": END
+    }
+)
+workflow.add_conditional_edges(
+    "scheduler",
+    lambda x: x.get("next_step", "FINISH"),
+    {
+        "coder": "coder",
+        "FINISH": END
+    }
+)
+workflow.add_conditional_edges(
+    "booking",
+    lambda x: x.get("next_step", "FINISH"),
+    {
+        "coder": "coder",
+        "FINISH": END
+    }
+)
+
 
 #動態路由：工程師寫完 Code 後，判斷下一步 (先導向 END 測試)
 workflow.add_conditional_edges(
@@ -125,9 +164,9 @@ workflow.add_conditional_edges(
 # 設定專員執行完後，交給 final_response 整理最終回覆
 #workflow.add_edge("weather", "final_response")
 #workflow.add_edge("travel", "final_response")
-workflow.add_edge("booking", "final_response")
-workflow.add_edge("financial", "final_response")
-workflow.add_edge("scheduler", "final_response")
+#workflow.add_edge("booking", "final_response")
+#workflow.add_edge("budget", "final_response")
+#workflow.add_edge("scheduler", "final_response")
 workflow.add_edge("safety", "final_response")
 workflow.add_edge("final_response", END)
 

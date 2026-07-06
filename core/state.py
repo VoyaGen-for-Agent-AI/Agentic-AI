@@ -10,7 +10,7 @@ class AgentState(TypedDict):
     user_query: str
 
     # Supervisor 決定的任務路由
-    route: Literal["weather", "travel", "booking", "financial", "scheduler", "safety", "multi", "unknown"]
+    route: Literal["weather", "travel", "booking", "budget", "scheduler", "safety", "traffic", "multi", "unknown"]
 
     # 目前正在處理的任務描述
     current_task: str
@@ -22,7 +22,7 @@ class AgentState(TypedDict):
     weather_result: dict[str, Any]
     travel_result: dict[str, Any]
     booking_result: dict[str, Any]
-    financial_result: dict[str, Any]
+    budget_result: dict[str, Any]
     scheduler_result: dict[str, Any]
     safety_result: dict[str, Any]
 
