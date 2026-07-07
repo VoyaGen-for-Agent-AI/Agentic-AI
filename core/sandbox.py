@@ -41,10 +41,14 @@ def _extract_logs(result: Any) -> tuple[str, str]:
     logs = _get_attr(result, "logs")
     stdout = _get_attr(result, "stdout")
     stderr = _get_attr(result, "stderr")
+    text = _get_attr(result, "text")
 
     if logs is not None:
         stdout = stdout if stdout is not None else _get_attr(logs, "stdout")
         stderr = stderr if stderr is not None else _get_attr(logs, "stderr")
+
+    if stdout is None and text is not None:
+        stdout = text
 
     return _to_text(stdout), _to_text(stderr)
 
@@ -63,6 +67,13 @@ def _extract_error(result: Any) -> str | None:
 
 
 def _create_sandbox(sandbox_class: Any, api_key: str) -> Any:
+    create = getattr(sandbox_class, "create", None)
+    if callable(create):
+        try:
+            return create(api_key=api_key)
+        except TypeError:
+            return create()
+
     try:
         return sandbox_class(api_key=api_key)
     except TypeError:
