@@ -30,7 +30,7 @@ def format_booking_response(result: dict[str, Any]) -> str:
     )
 
 
-def format_financial_response(result: dict[str, Any]) -> str:
+def format_budget_response(result: dict[str, Any]) -> str:
     return (
         f"總預算 {result['currency']} {result['budget_total']}，"
         f"剩餘可用預算 {result['currency']} {result['budget_remaining']}"
@@ -57,7 +57,7 @@ RESULT_FORMATTERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "weather": format_weather_response,
     "travel": format_travel_response,
     "booking": format_booking_response,
-    "financial": format_financial_response,
+    "budget": format_budget_response,
     "scheduler": format_scheduler_response,
     "safety": format_safety_response,
 }
@@ -66,7 +66,7 @@ RESULT_KEYS = {
     "weather": "weather_result",
     "travel": "travel_result",
     "booking": "booking_result",
-    "financial": "financial_result",
+    "budget": "budget_result",
     "scheduler": "scheduler_result",
     "safety": "safety_result",
 }

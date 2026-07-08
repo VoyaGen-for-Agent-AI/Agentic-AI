@@ -21,7 +21,7 @@ def make_state(route: str = "unknown", current_task: str = "", **results):
         "weather_result": results.get("weather_result", {}),
         "travel_result": results.get("travel_result", {}),
         "booking_result": results.get("booking_result", {}),
-        "financial_result": results.get("financial_result", {}),
+        "budget_result": results.get("budget_result", {}),
         "scheduler_result": results.get("scheduler_result", {}),
         "safety_result": results.get("safety_result", {}),
         "generated_code": "",
@@ -44,7 +44,7 @@ def assert_final_response(result):
 
 def test_result_formatters_include_all_agent_routes():
     assert {
-        "weather", "travel", "booking", "financial", "scheduler", "safety",
+        "weather", "travel", "booking", "budget", "scheduler", "safety",
     }.issubset(RESULT_FORMATTERS.keys())
 
 
@@ -102,11 +102,11 @@ def test_booking_result_generates_final_answer():
     assert "Din Tai Fung" in result["final_answer"]
 
 
-def test_financial_result_generates_final_answer():
+def test_budget_result_generates_final_answer():
     result = final_response_node(
         make_state(
-            route="financial",
-            financial_result={
+            route="budget",
+            budget_result={
                 "budget_total": 20000.0,
                 "budget_remaining": 12500.0,
                 "currency": "TWD",
