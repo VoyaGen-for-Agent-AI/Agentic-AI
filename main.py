@@ -33,8 +33,8 @@ app = FastAPI()
 llm = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",  #把請求導向 OpenRouter
     #model="google/gemma-4-26b-a4b-it:free",
-    #model="liquid/lfm-2.5-1.2b-thinking:free",
-    model="meta-llama/llama-3.3-70b-instruct:free",
+    model="liquid/lfm-2.5-1.2b-thinking:free",
+    #model="meta-llama/llama-3.3-70b-instruct:free",
     #model="openai/gpt-oss-20b:free",
     api_key=os.getenv("OPENAI_API_KEY")# type: ignore
 )
