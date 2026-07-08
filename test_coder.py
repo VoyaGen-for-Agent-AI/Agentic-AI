@@ -1,9 +1,17 @@
-from main import app_graph
-from core.state import AgentState
-from langchain_core.messages import HumanMessage
+import os
 import time
 
+import pytest
+from langchain_core.messages import HumanMessage
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY"),
+    reason="test_coder requires OPENAI_API_KEY and calls the live supervisor workflow",
+)
+
 def test_run():
+    from main import app_graph
+
     print("🚀 開始測試天氣轉寫 Code 流程...")
     
     initial_state = {

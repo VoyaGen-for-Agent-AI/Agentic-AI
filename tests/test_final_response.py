@@ -7,7 +7,6 @@ from langgraph.graph import END, StateGraph
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from agents.final_response import FALLBACK_ANSWER, RESULT_FORMATTERS, final_response_node
-from agents.workers.mock_workers import weather_node
 from core.state import AgentState
 
 
@@ -233,8 +232,19 @@ def test_next_step_scheduler_can_select_formatter():
 
 
 def test_worker_routes_to_final_response_without_llm():
+    def fake_weather_node(state: AgentState):
+        return {
+            "weather_result": {
+                "location": "Taipei",
+                "condition": "rainy",
+                "rain_probability": 80,
+                "temperature": 28,
+            },
+            "messages": [AIMessage(content="[Mock][Weather] Taipei rainy")],
+        }
+
     workflow = StateGraph(AgentState)
-    workflow.add_node("weather", weather_node)
+    workflow.add_node("weather", fake_weather_node)
     workflow.add_node("final_response", final_response_node)
     workflow.set_entry_point("weather")
     workflow.add_edge("weather", "final_response")

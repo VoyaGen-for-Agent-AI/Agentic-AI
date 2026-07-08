@@ -1,20 +1,6 @@
 from core.state import AgentState
 from langchain_core.messages import AIMessage
 
-def weather_node(state: AgentState):
-    weather_result = {
-        "location": "Taipei",
-        "condition": "rainy",
-        "rain_probability": 80,
-        "temperature": 28,
-    }
-    return {
-        "weather_result": weather_result,
-        "messages": [
-            AIMessage(content="[Mock][Weather] Taipei 目前為 rainy，降雨機率 80%，氣溫 28 度。")
-        ]
-    }
-
 def travel_node(state: AgentState):
     travel_result = {
         "destination": "Taipei",

@@ -1,7 +1,9 @@
 import sys
 from pathlib import Path
+import os
 
 from langchain_core.messages import AIMessage, HumanMessage
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -11,8 +13,8 @@ from agents.workers.mock_workers import (
     safety_node,
     scheduler_node,
     travel_node,
-    weather_node,
 )
+from agents.workers.weather_worker import weather_node
 
 
 def make_state(query: str, next_step: str):
@@ -49,6 +51,9 @@ def assert_worker_result(result, result_key: str, required_keys: set[str]):
 
 
 def test_weather_node_returns_state_update():
+    if not os.getenv("OPENAI_API_KEY"):
+        pytest.skip("weather_worker requires OPENAI_API_KEY")
+
     query = "明天台北天氣如何？"
     result = weather_node(make_state(query, "weather"))
 

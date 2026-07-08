@@ -9,8 +9,9 @@ from agents.supervisor import create_supervisor_node
 from agents.final_response import final_response_node
 from agents.workers.weather_worker import weather_node
 from agents.workers.coder_worker import coder_node
+from agents.workers.sandbox_worker import sandbox_node
+from agents.workers.parser_worker import parser_node
 from agents.workers.mock_workers import (
-    #weather_node,
     travel_node,
     booking_node,
     financial_node,
@@ -68,6 +69,8 @@ workflow = StateGraph(AgentState)
 workflow.add_node("supervisor", supervisor_node)
 workflow.add_node("weather", weather_node)
 workflow.add_node("coder", coder_node)
+workflow.add_node("e2b_sandbox", sandbox_node)
+workflow.add_node("parser", parser_node)
 workflow.add_node("travel", travel_node)
 workflow.add_node("booking", booking_node)
 workflow.add_node("financial", financial_node)
@@ -102,23 +105,24 @@ workflow.add_conditional_edges(
         "FINISH": END
     }
 )
-#動態路由：工程師寫完 Code 後，判斷下一步 (先導向 END 測試)
+#動態路由：工程師寫完 Code 後，判斷下一步
 workflow.add_conditional_edges(
     "coder",
     lambda x: x.get("next_step", "FINISH"),
     {
-        "e2b_sandbox": END, # 因為 E2B 還沒接，先讓他結束，測試能不能印出程式碼
+        "e2b_sandbox": "e2b_sandbox",
         "FINISH": END
     }
 )
 
 # 設定專員執行完後，交給 final_response 整理最終回覆
-#workflow.add_edge("weather", "final_response")
 workflow.add_edge("travel", "final_response")
 workflow.add_edge("booking", "final_response")
 workflow.add_edge("financial", "final_response")
 workflow.add_edge("scheduler", "final_response")
 workflow.add_edge("safety", "final_response")
+workflow.add_edge("e2b_sandbox", "parser")
+workflow.add_edge("parser", "final_response")
 workflow.add_edge("final_response", END)
 
 # 4. 編譯成可執行的應用程式

@@ -55,7 +55,7 @@ Role B 本週負責 Action & Sandbox Integration 的最小可交付骨架，Spri
 
 ### Role B 測試方式
 
-一般單元測試不需要任何 API key，也不會呼叫真實 Weather / Movie / Travel API：
+一般單元測試不需要任何 API key，也不會呼叫真實 Weather / Travel / Booking / Financial / Scheduler / Safety API：
 
 `poetry run pytest`
 
@@ -86,7 +86,7 @@ Final response 測試：
 
 以下項目保留到 Sprint 2 或後續：
 
-- 真實 Weather / Movie / Travel API 串接。
+- 真實 Weather / Travel / Booking / Financial / Scheduler / Safety API 串接。
 - E2B sandbox 真實程式執行。
 - Critic Agent。
 - Tavily / OpenWeather / Google Maps / TMDB 等外部服務整合。
