@@ -51,6 +51,7 @@ def booking_node(state: AgentState):
         # 把這份規格書加進對話紀錄中，這樣 Coder 的 last_request 才能完美接到這句話
         return {
             "messages": [response],
+            "current_task": "booking",
             "next_step": "coder" # 指派下一步給 Coder Agent 去寫 Code
         }
 

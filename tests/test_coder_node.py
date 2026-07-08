@@ -75,3 +75,21 @@ def test_coder_node_returns_json_printing_generated_code(monkeypatch):
         "temperature": 28,
         "rain_probability": 80,
     }
+
+
+def test_coder_node_handles_llm_error(monkeypatch):
+    class FailingChatOpenAI:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def invoke(self, messages):
+            raise Exception("mock llm failure")
+
+    monkeypatch.setattr(coder_worker, "ChatOpenAI", FailingChatOpenAI)
+    monkeypatch.setattr(coder_worker.time, "sleep", lambda seconds: None)
+
+    result = coder_node(make_state())
+
+    assert result["next_step"] == "FINISH"
+    assert result["execution_status"] == "error"
+    assert "mock llm failure" in result["error_traceback"]

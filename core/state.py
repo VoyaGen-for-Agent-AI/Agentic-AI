@@ -26,6 +26,7 @@ class AgentState(TypedDict):
     budget_result: dict[str, Any]
     scheduler_result: dict[str, Any]
     safety_result: dict[str, Any]
+    traffic_result: dict[str, Any]
 
     # Sandbox / action execution 相關欄位
     generated_code: str

@@ -68,4 +68,8 @@ def coder_node(state: AgentState):
 
     except Exception as e:
         print(f"⚠️  [Coder Agent] 發生錯誤: {e}")
-        return {"next_step": "FINISH"}
+        return {
+            "next_step": "FINISH",
+            "execution_status": "error",
+            "error_traceback": str(e),
+        }

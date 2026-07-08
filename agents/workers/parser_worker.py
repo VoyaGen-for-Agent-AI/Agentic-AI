@@ -9,13 +9,21 @@ RESULT_KEYS = {
     "weather": "weather_result",
     "movie": "movie_result",
     "travel": "travel_result",
+    "booking": "booking_result",
+    "budget": "budget_result",
+    "scheduler": "scheduler_result",
+    "traffic": "traffic_result",
 }
+
+NON_TASK_STEPS = {"coder", "e2b_sandbox", "parser", "final_response", "FINISH"}
 
 
 def _select_result_key(state: AgentState) -> str:
-    for route in (state.get("route"), state.get("current_task"), state.get("next_step")):
-        if route in RESULT_KEYS:
-            return RESULT_KEYS[route]
+    for task in (state.get("current_task"), state.get("route"), state.get("next_step")):
+        if task in NON_TASK_STEPS:
+            continue
+        if task in RESULT_KEYS:
+            return RESULT_KEYS[task]
     return ""
 
 
