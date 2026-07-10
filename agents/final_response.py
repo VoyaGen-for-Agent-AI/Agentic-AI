@@ -22,12 +22,22 @@ def format_travel_response(result: dict[str, Any]) -> str:
 
 
 def format_booking_response(result: dict[str, Any]) -> str:
-    hotels = "、".join(result["hotels"])
-    restaurants = "、".join(result["restaurants"])
-    return (
-        f"{result['location']} 周邊推薦住宿：{hotels}；推薦餐廳：{restaurants}。"
-        f"{result['price_comparison']}。"
-    )
+    recommended_hotel = result.get("recommended_hotel")
+    if isinstance(recommended_hotel, dict):
+        return (
+            f"推薦住宿：{recommended_hotel['name']}，位於 {recommended_hotel['area']}，"
+            f"每晚 {recommended_hotel['price_per_night']} 元，"
+            f"總價 {recommended_hotel['total_price']} 元。"
+            f"{recommended_hotel['reason']}"
+        )
+
+    hotels = result.get("hotels", [])
+    restaurants = result.get("restaurants", [])
+    price_comparison = result.get("price_comparison", "")
+    location = result.get("location", "目的地")
+    hotel_names = "、".join(hotels)
+    restaurant_names = "、".join(restaurants)
+    return f"{location} 周邊推薦住宿：{hotel_names}；推薦餐廳：{restaurant_names}。{price_comparison}。"
 
 
 def format_budget_response(result: dict[str, Any]) -> str:

@@ -128,9 +128,33 @@ def test_parser_does_not_guess_result_when_only_next_step_is_e2b_sandbox():
     assert "weather_result" not in result
 
 
+def test_coder_node_does_not_overwrite_current_task(monkeypatch):
+    generated_code = "print('{\"location\":\"Taipei\"}')"
+
+    class FakeCoderLLM:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def invoke(self, messages):
+            return SimpleNamespace(content=f"```python\n{generated_code}\n```")
+
+    monkeypatch.setattr(coder_worker, "ChatOpenAI", FakeCoderLLM)
+    monkeypatch.setattr(coder_worker.time, "sleep", lambda seconds: None)
+
+    state = make_state(route="weather", current_task="weather", next_step="coder")
+    result = coder_node(state)
+    apply_update(state, result)
+
+    assert result["next_step"] == "e2b_sandbox"
+    assert result["generated_code"] == generated_code
+    assert result.get("current_task") != "e2b_sandbox"
+    assert state["current_task"] == "weather"
+
+
 @pytest.mark.parametrize(
     ("task", "result_key"),
     [
+        ("weather", "weather_result"),
         ("travel", "travel_result"),
         ("booking", "booking_result"),
         ("budget", "budget_result"),

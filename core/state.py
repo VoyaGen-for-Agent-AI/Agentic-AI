@@ -23,6 +23,7 @@ class AgentState(TypedDict):
     movie_result: dict[str, Any]
     travel_result: dict[str, Any]
     booking_result: dict[str, Any]
+    budget_allocation: dict[str, Any]
     budget_result: dict[str, Any]
     scheduler_result: dict[str, Any]
     safety_result: dict[str, Any]
@@ -41,7 +42,7 @@ class AgentState(TypedDict):
     critic_result: Optional[Dict[str, Any]]
 
     # 執行狀態
-    execution_status: Literal["success", "error", "timeout"]
+    execution_status: Literal["success", "error", "timeout", "empty_result"]
 
     # 紀錄重試次數，避免無限迴圈
     retry_count: int

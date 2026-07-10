@@ -5,6 +5,33 @@ from core.state import AgentState
 from prompts.budget_prompt import BUDGET_PROMPT
 import time
 
+
+def allocate_budget(total_budget: int, days: int, nights: int, preference: str = "") -> dict:
+    ratios = {
+        "hotel_budget": 0.40,
+        "transport_budget": 0.18,
+        "food_budget": 0.27,
+        "activity_budget": 0.05,
+        "buffer_budget": 0.10,
+    }
+
+    if "省錢" in preference or "便宜" in preference:
+        ratios["hotel_budget"] = 0.35
+        ratios["buffer_budget"] = 0.15
+    elif "舒適" in preference or "不要太累" in preference:
+        ratios["hotel_budget"] = 0.45
+        ratios["food_budget"] = 0.24
+        ratios["buffer_budget"] = 0.08
+
+    allocation = {
+        key: int(total_budget * ratio)
+        for key, ratio in ratios.items()
+        if key != "buffer_budget"
+    }
+    allocation["buffer_budget"] = total_budget - sum(allocation.values())
+    return allocation
+
+
 def budget_node(state: AgentState):
     print("💰  [Budget Worker] 正在解析使用者預算估算需求...")
     time.sleep(5)
