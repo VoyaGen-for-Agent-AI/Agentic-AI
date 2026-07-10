@@ -1,21 +1,52 @@
 import os
+import sys
 import time
+from pathlib import Path
 
-import pytest
+from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 
-pytestmark = pytest.mark.skipif(
-    not os.getenv("OPENAI_API_KEY"),
-    reason="test_coder requires OPENAI_API_KEY and calls the live supervisor workflow",
-)
 
-def test_run():
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+
+
+def _has_api_key(name: str) -> bool:
+    return bool((os.getenv(name) or "").strip())
+
+
+def _configure_openrouter_key() -> bool:
+    if _has_api_key("OPENAI_API_KEY"):
+        return True
+
+    openrouter_key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+    if openrouter_key:
+        os.environ["OPENAI_API_KEY"] = openrouter_key
+        return True
+
+    return False
+
+
+def _has_e2b_api_key() -> bool:
+    api_key = (os.getenv("E2B_API_KEY") or "").strip()
+    return bool(api_key and api_key not in {",", "your_e2b_api_key"})
+
+
+def main():
+    load_dotenv(PROJECT_ROOT / ".env")
+    if not _configure_openrouter_key():
+        print("OPENROUTER_API_KEY or OPENAI_API_KEY is not set. Add one to .env to run this live workflow test.")
+        return
+    if not _has_e2b_api_key():
+        print("E2B_API_KEY is not set. Add it to .env to run this live workflow test.")
+        return
+
     from main import app_graph
 
-    print("🚀 開始測試天氣轉寫 Code 流程...")
+    print("🚀 開始測試旅遊轉寫 Code 流程...")
     
     initial_state = {
-        "messages": [HumanMessage(content="幫我查一下台北現在的天氣如何？")],
+        "messages": [HumanMessage(content="幫我排台北兩天一夜行程，我想去故宮博物院，還要吃鼎泰豐。")],
         "next_step": "supervisor",
         "generated_code": ""
     }
@@ -52,4 +83,4 @@ def test_run():
                 break
 
 if __name__ == "__main__":
-    test_run()
+    main()

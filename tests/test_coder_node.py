@@ -88,8 +88,13 @@ def test_coder_node_handles_llm_error(monkeypatch):
     monkeypatch.setattr(coder_worker, "ChatOpenAI", FailingChatOpenAI)
     monkeypatch.setattr(coder_worker.time, "sleep", lambda seconds: None)
 
-    result = coder_node(make_state())
+    state = make_state()
+    result = coder_node(state)
+    updated_state = {**state, **result}
 
     assert result["next_step"] == "FINISH"
     assert result["execution_status"] == "error"
     assert "mock llm failure" in result["error_traceback"]
+    assert updated_state["current_task"] == "weather"
+    assert updated_state["route"] == "weather"
+    assert updated_state["retry_count"] == 0
