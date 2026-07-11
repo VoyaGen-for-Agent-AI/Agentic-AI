@@ -6,6 +6,13 @@ from typing import Any, Literal
 SandboxStatus = Literal["success", "error", "timeout", "skipped"]
 SandboxResponse = dict[str, str | None]
 
+# coder 產生的程式碼會在「遠端沙盒」執行，讀不到本機 .env，因此需要把它真正
+# 用得到的「資料類」API 金鑰明確注入沙盒環境變數。
+# 刻意只放資料類金鑰，不注入 OPENAI_API_KEY / E2B_API_KEY / LANGFUSE_* 等敏感金鑰：
+# 產生的程式碼不該用到它們，也避免把它們送進遠端執行的任意程式碼中。
+SANDBOX_ENV_ALLOWLIST = ("OPENWEATHER_API_KEY", "TAVILY_API_KEY")
+_ENV_PLACEHOLDERS = {"", ",", "your_api_key"}
+
 
 def _sandbox_response(
     status: SandboxStatus,
@@ -80,6 +87,26 @@ def _create_sandbox(sandbox_class: Any, api_key: str) -> Any:
         return sandbox_class()
 
 
+def _collect_sandbox_envs() -> dict[str, str]:
+    """從本機環境挑出白名單內、且有實際值的金鑰，準備注入沙盒。"""
+    envs: dict[str, str] = {}
+    for name in SANDBOX_ENV_ALLOWLIST:
+        value = (os.getenv(name) or "").strip()
+        if value and value not in _ENV_PLACEHOLDERS:
+            envs[name] = value
+    return envs
+
+
+def _run_code(sandbox: Any, code: str, envs: dict[str, str]) -> Any:
+    """執行程式碼並注入 envs；若該版本 SDK / mock 不支援 envs，退回不帶 envs 呼叫。"""
+    if envs:
+        try:
+            return sandbox.run_code(code, envs=envs)
+        except TypeError:
+            pass
+    return sandbox.run_code(code)
+
+
 def _close_sandbox(sandbox: Any) -> None:
     for method_name in ("close", "kill"):
         method = getattr(sandbox, method_name, None)
@@ -114,7 +141,7 @@ def run_python_in_sandbox(code: str) -> SandboxResponse:
     try:
         sandbox_class = getattr(e2b_module, "Sandbox")
         sandbox = _create_sandbox(sandbox_class, api_key)
-        result = sandbox.run_code(code)
+        result = _run_code(sandbox, code, _collect_sandbox_envs())
 
         stdout, stderr = _extract_logs(result)
         error = _extract_error(result)

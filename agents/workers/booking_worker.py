@@ -10,27 +10,27 @@ def booking_node(state: AgentState):
     time.sleep(5)
 
     # 1. 初始化 Booking 專員的大腦
-    llm = ChatOpenAI(
-    base_url="https://openrouter.ai/api/v1",  #把請求導向 OpenRouter
-    #model="google/gemma-4-26b-a4b-it:free",
-    #model="liquid/lfm-2.5-1.2b-thinking:free",
-    model="meta-llama/llama-3.3-70b-instruct:free",
-    #model="openai/gpt-oss-20b:free",
-    api_key=os.getenv("OPENAI_API_KEY")# type: ignore
-)
-##############付費#################
-# llm = ChatOpenAI(
-#     base_url="https://openrouter.ai/api/v1",
-#     model="meta-llama/llama-3.1-8b-instruct",
-#     api_key=os.getenv("OPENAI_API_KEY"), # type: ignore
-#     extra_body={
-#         "provider": {
-#             "order": ["DeepInfra","NovitaAI"],
-#             "ignore": ["Cloudflare","Groq"],
-#             "allow_fallbacks": True
-#         }
-#     } 
+#     llm = ChatOpenAI(
+#     base_url="https://openrouter.ai/api/v1",  #把請求導向 OpenRouter
+#     #model="google/gemma-4-26b-a4b-it:free",
+#     #model="liquid/lfm-2.5-1.2b-thinking:free",
+#     model="meta-llama/llama-3.3-70b-instruct:free",
+#     #model="openai/gpt-oss-20b:free",
+#     api_key=os.getenv("OPENAI_API_KEY")# type: ignore
 # )
+##############付費#################
+    llm = ChatOpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        model="meta-llama/llama-3.1-8b-instruct",
+        api_key=os.getenv("OPENAI_API_KEY"), # type: ignore
+        extra_body={
+            "provider": {
+                "order": ["DeepInfra","NovitaAI"],
+                "ignore": ["Cloudflare","Groq"],
+                "allow_fallbacks": True
+            }
+        } 
+    )
 ################################# 
 
     # 2. 抓取使用者的原始問題 (通常是最一開始的那句話)
@@ -51,6 +51,7 @@ def booking_node(state: AgentState):
         # 把這份規格書加進對話紀錄中，這樣 Coder 的 last_request 才能完美接到這句話
         return {
             "messages": [response],
+            "current_task": "booking",
             "next_step": "coder" # 指派下一步給 Coder Agent 去寫 Code
         }
 

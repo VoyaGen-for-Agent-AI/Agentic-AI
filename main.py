@@ -82,5 +82,22 @@ def chat_test(query: str):
     # 將使用者的問題包裝成 HumanMessage 送進去跑
     result = app_graph.invoke({"messages": [HumanMessage(content=query)]}, config)  # type: ignore
 
-    # 回傳 supervisor 彙整後的最終回覆
-    return {"response": result["messages"][-1].content}
+    # 依 stage_logs 組出每一段的執行明細，並帶上該段實際寫回的結構化結果，
+    # 方便不進 Langfuse 也能快速看出哪一段成功、哪一段失敗
+    stages = []
+    for log in result.get("stage_logs", []):
+        result_key = log.get("result_key", "")
+        stages.append({
+            "stage": log.get("stage", ""),
+            "status": log.get("status", ""),          # success / error / timeout
+            "has_result": log.get("has_result", False),
+            "code_chars": log.get("code_chars", 0),    # coder 產出的程式碼字數
+            "result": result.get(result_key, {}) if result_key else {},
+        })
+
+    # 回傳 supervisor 彙整後的最終回覆 + 每段明細
+    return {
+        "response": result["messages"][-1].content,
+        "budget_tier": result.get("budget_tier", ""),
+        "stages": stages,
+    }

@@ -19,7 +19,11 @@ STAGE_ORDER = ["budget", "weather", ("travel", "booking"), "traffic", "scheduler
 
 def _completed_stages(state: AgentState) -> set[str]:
     logs = state.get("stage_logs") or []
-    return {log.get("stage") for log in logs if isinstance(log, dict)}
+    return {
+        stage
+        for log in logs
+        if isinstance(log, dict) and isinstance(stage := log.get("stage"), str)
+    }
 
 
 def supervisor_node(state: AgentState) -> dict:

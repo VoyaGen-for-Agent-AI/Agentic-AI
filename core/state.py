@@ -30,6 +30,7 @@ class AgentState(TypedDict):
     traffic_result: dict[str, Any]
     scheduler_result: dict[str, Any]
     safety_result: dict[str, Any]
+    traffic_result: dict[str, Any]
 
     # 每個 stage 執行完後附加的觀測紀錄 (stage 名稱 / 產生的 code / stdout / 狀態)
     # 使用 operator.add 讓平行的 travel / booking stage 可以安全合併，不會互相覆蓋
