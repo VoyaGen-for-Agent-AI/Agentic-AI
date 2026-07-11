@@ -1,201 +1,103 @@
 import os
 from fastapi import FastAPI
 from langgraph.graph import StateGraph, END
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 from langfuse.langchain import CallbackHandler
 from core.state import AgentState
-from agents.supervisor import create_supervisor_node
+from agents.supervisor import supervisor_node, route_next
+from agents.stage_graph import make_stage_node
 from agents.final_response import final_response_node
 from agents.workers.weather_worker import weather_node
 from agents.workers.travel_worker import travel_node
-from agents.workers.coder_worker import coder_node
-from agents.workers.traffic_worker import traffic_node
-from agents.workers.budget_worker import budget_node
-from agents.workers.schedule_worker import schedule_node
 from agents.workers.booking_worker import booking_node
-from agents.workers.sandbox_worker import sandbox_node
-from agents.workers.parser_worker import parser_node
-from agents.workers.mock_workers import (
-    #weather_node,
-    #travel_node,
-    #booking_node,
-    #financial_node,
-    #scheduler_node,
-    safety_node,
-)
+from agents.workers.budget_worker import budget_node
+from agents.workers.traffic_worker import traffic_node
+from agents.workers.schedule_worker import schedule_node
 from dotenv import load_dotenv
 
-load_dotenv() # 這行會自動把 .env 裡的金鑰載入系統中
+load_dotenv()  # 這行會自動把 .env 裡的金鑰載入系統中
 if not os.getenv("OPENAI_API_KEY"):
     print("警告：找不到 OPENAI_API_KEY！")
 app = FastAPI()
 
-# 1. 初始化 LLM 與大腦邏輯
-llm = ChatOpenAI(
-    base_url="https://openrouter.ai/api/v1",  #把請求導向 OpenRouter
-    #model="google/gemma-4-26b-a4b-it:free",
-    model="liquid/lfm-2.5-1.2b-thinking:free",
-    #model="meta-llama/llama-3.3-70b-instruct:free",
-    #model="openai/gpt-oss-20b:free",
-    api_key=os.getenv("OPENAI_API_KEY")# type: ignore
-)
-##############付費#################
-# llm = ChatOpenAI(
-#     base_url="https://openrouter.ai/api/v1",
-#     model="meta-llama/llama-3.1-8b-instruct",
-#     api_key=os.getenv("OPENAI_API_KEY"), # type: ignore
-#     extra_body={
-#         "provider": {
-#             "order": ["DeepInfra","NovitaAI"],
-#             "ignore": ["Cloudflare","Groq"],
-#             "allow_fallbacks": True
-#         }
-#     } 
-# )
-################################# 
-supervisor_chain = create_supervisor_node(llm)
-
-# 1. 初始化 Langfuse Callback Handler（v4 從環境變數讀取 LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST）
+# Langfuse Callback Handler（v4 從環境變數讀取 LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST）
 langfuse_handler = CallbackHandler()
 
-# 定義一個外層函式來處理狀態流轉
-def supervisor_node(state: AgentState):
-    # 取出對話紀錄中的最後一句話（也就是使用者剛輸入的話）
-    user_input = state["messages"][-1].content
-    # 呼叫大腦進行判斷
-    result = supervisor_chain.invoke({"input": user_input})
-    # 把判斷結果寫回 State 的 next_step 欄位
-    return {"next_step": result.next_step}# type: ignore
-
-# 2. 構建 Graph 狀態機
+# ---------------------------------------------------------------------------
+# 構建 Graph 狀態機
+#
+# supervisor 是確定性的編排 hub；每個 stage 都是一張獨立子圖
+# (worker → coder → e2b_sandbox → parser)，由 make_stage_node 包裝後只把該 stage
+# 的 result 冒泡回父圖。因此 travel / booking 可以平行執行而不會互相覆蓋狀態。
+#
+# 流程：supervisor → budget → supervisor → weather → supervisor
+#       → [travel ∥ booking] → supervisor → traffic → supervisor
+#       → scheduler → supervisor → final_response → END
+# ---------------------------------------------------------------------------
 workflow = StateGraph(AgentState)
 
-# 加入所有節點
 workflow.add_node("supervisor", supervisor_node)
-workflow.add_node("weather", weather_node)
-workflow.add_node("coder", coder_node)
-workflow.add_node("e2b_sandbox", sandbox_node)
-workflow.add_node("parser", parser_node)
-workflow.add_node("travel", travel_node)
-workflow.add_node("booking", booking_node)
-workflow.add_node("budget", budget_node)
-workflow.add_node("scheduler", schedule_node)
-workflow.add_node("safety", safety_node)
-workflow.add_node("traffic", traffic_node)
+workflow.add_node("budget", make_stage_node(budget_node, "budget_result", "budget"))
+workflow.add_node("weather", make_stage_node(weather_node, "weather_result", "weather"))
+workflow.add_node("travel", make_stage_node(travel_node, "travel_result", "travel"))
+workflow.add_node("booking", make_stage_node(booking_node, "booking_result", "booking"))
+workflow.add_node("traffic", make_stage_node(traffic_node, "traffic_result", "traffic"))
+workflow.add_node("scheduler", make_stage_node(schedule_node, "scheduler_result", "scheduler"))
 workflow.add_node("final_response", final_response_node)
 
-# 設定程式進入點
+# 進入點：supervisor
 workflow.set_entry_point("supervisor")
 
-# 3. 設定條件邊緣 (Conditional Edges)
+# supervisor 依「已完成的 stage」決定下一步（route_next 回傳 list 代表平行 fan-out）
 workflow.add_conditional_edges(
     "supervisor",
-    # 判斷依據：看 state 裡面的 next_step 裝了什麼字串
-    lambda x: x["next_step"],
+    route_next,
     {
+        "budget": "budget",
         "weather": "weather",
         "travel": "travel",
         "booking": "booking",
-        "budget": "budget",
-        "scheduler": "scheduler",
-        "safety": "safety",
         "traffic": "traffic",
-        "FINISH": END
-    }
-)
-#動態路由：天氣專員產出規格後，判斷下一步 (交給 coder)
-workflow.add_conditional_edges(
-    "weather",
-    lambda x: x.get("next_step", "FINISH"),
-    {
-        "coder": "coder",
-        "FINISH": END
-    }
-)
-workflow.add_conditional_edges(
-    "travel",
-    lambda x: x.get("next_step", "FINISH"),
-    {
-        "coder": "coder",
-        "FINISH": END
-    }
-)
-workflow.add_conditional_edges(
-    "traffic",
-    lambda x: x.get("next_step", "FINISH"),
-    {
-        "coder": "coder",
-        "FINISH": END
-    }
-)
-workflow.add_conditional_edges(
-    "budget",
-    lambda x: x.get("next_step", "FINISH"),
-    {
-        "coder": "coder",
-        "FINISH": END
-    }
-)
-workflow.add_conditional_edges(
-    "scheduler",
-    lambda x: x.get("next_step", "FINISH"),
-    {
-        "coder": "coder",
-        "FINISH": END
-    }
-)
-workflow.add_conditional_edges(
-    "booking",
-    lambda x: x.get("next_step", "FINISH"),
-    {
-        "coder": "coder",
-        "FINISH": END
-    }
+        "scheduler": "scheduler",
+        "FINISH": "final_response",
+    },
 )
 
+# 每個 stage 完成後都回到 supervisor，由 supervisor 決定下一棒
+for stage in ("budget", "weather", "travel", "booking", "traffic", "scheduler"):
+    workflow.add_edge(stage, "supervisor")
 
-#動態路由：工程師寫完 Code 後，判斷下一步 (交給 e2b_sandbox 執行)
-workflow.add_conditional_edges(
-    "coder",
-    lambda x: x.get("next_step", "FINISH"),
-    {
-        "e2b_sandbox": "e2b_sandbox",
-        "FINISH": END
-    }
-)
-
-# 設定專員執行完後，交給 final_response 整理最終回覆
-#workflow.add_edge("weather", "final_response")
-#workflow.add_edge("travel", "final_response")
-#workflow.add_edge("booking", "final_response")
-#workflow.add_edge("budget", "final_response")
-#workflow.add_edge("scheduler", "final_response")
-workflow.add_edge("safety", "final_response")
-workflow.add_edge("e2b_sandbox", "parser")
-workflow.add_edge("parser", "final_response")
 workflow.add_edge("final_response", END)
 
-# 4. 編譯成可執行的應用程式
+# 編譯成可執行的應用程式
 app_graph = workflow.compile()
+
 
 # 建立一個測試用的 API 端點
 @app.get("/chat/{query}")
 def chat_test(query: str):
-    # 將 handler 透過 config 傳入 invoke
-    # 這會確保整個 Graph 的執行過程都被 Langfuse 記錄下來
+    # 將 handler 透過 config 傳入 invoke，確保整個 Graph 執行過程都被 Langfuse 記錄
     config = {"callbacks": [langfuse_handler]}
-    
+
     # 將使用者的問題包裝成 HumanMessage 送進去跑
-    result = app_graph.invoke({"messages": [HumanMessage(content=query)]}, config)# type: ignore
-    ################################################
-    #測試階段：把產生的程式碼印出來看看！
-    generated_code = result.get("generated_code", "")
-    if generated_code:
-        print("\n\n===== Coder 產出的程式碼 =====")
-        print(generated_code)
-        print("==============================\n\n")
-   ################################################
-   
-    # 回傳 Graph 跑完後，陣列裡最後一句 AI 生成的話
-    return {"response": result["messages"][-1].content}
+    result = app_graph.invoke({"messages": [HumanMessage(content=query)]}, config)  # type: ignore
+
+    # 依 stage_logs 組出每一段的執行明細，並帶上該段實際寫回的結構化結果，
+    # 方便不進 Langfuse 也能快速看出哪一段成功、哪一段失敗
+    stages = []
+    for log in result.get("stage_logs", []):
+        result_key = log.get("result_key", "")
+        stages.append({
+            "stage": log.get("stage", ""),
+            "status": log.get("status", ""),          # success / error / timeout
+            "has_result": log.get("has_result", False),
+            "code_chars": log.get("code_chars", 0),    # coder 產出的程式碼字數
+            "result": result.get(result_key, {}) if result_key else {},
+        })
+
+    # 回傳 supervisor 彙整後的最終回覆 + 每段明細
+    return {
+        "response": result["messages"][-1].content,
+        "budget_tier": result.get("budget_tier", ""),
+        "stages": stages,
+    }

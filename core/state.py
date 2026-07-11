@@ -18,15 +18,23 @@ class AgentState(TypedDict):
     # 紀錄 Supervisor 決定要派發給誰 (例如: "travel", 或 "FINISH")
     next_step: str
 
-    # Mock workers 的結構化結果
+    # 預算管家判斷出的預算階層 (窮遊 / 適中 / 寬裕)
+    budget_tier: str
+
+    # 各 stage (worker→coder→sandbox→parser) 完成後回傳給 supervisor 的結構化結果
     weather_result: dict[str, Any]
     movie_result: dict[str, Any]
     travel_result: dict[str, Any]
     booking_result: dict[str, Any]
     budget_result: dict[str, Any]
+    traffic_result: dict[str, Any]
     scheduler_result: dict[str, Any]
     safety_result: dict[str, Any]
     traffic_result: dict[str, Any]
+
+    # 每個 stage 執行完後附加的觀測紀錄 (stage 名稱 / 產生的 code / stdout / 狀態)
+    # 使用 operator.add 讓平行的 travel / booking stage 可以安全合併，不會互相覆蓋
+    stage_logs: Annotated[list[dict[str, Any]], operator.add]
 
     # Sandbox / action execution 相關欄位
     generated_code: str
