@@ -9,10 +9,18 @@ RESULT_KEYS = {
     "weather": "weather_result",
     "movie": "movie_result",
     "travel": "travel_result",
+    "booking": "booking_result",
+    "budget": "budget_result",
+    "traffic": "traffic_result",
+    "scheduler": "scheduler_result",
 }
 
 
 def _select_result_key(state: AgentState) -> str:
+    # stage sub-graph 會直接指定要寫入的 result key，優先採用
+    explicit_key = state.get("result_key")
+    if explicit_key:
+        return explicit_key
     for route in (state.get("route"), state.get("current_task"), state.get("next_step")):
         if route in RESULT_KEYS:
             return RESULT_KEYS[route]

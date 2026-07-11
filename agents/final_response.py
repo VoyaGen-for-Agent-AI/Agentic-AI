@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -73,21 +74,53 @@ RESULT_KEYS = {
 
 FALLBACK_ANSWER = "目前無法根據已有結果產生回覆，請提供更明確的任務或稍後再試。"
 
+# supervisor 收齊所有 stage 結果後，final_response 依此順序彙整成一份完整回覆
+AGG_ORDER: list[tuple[str, str]] = [
+    ("budget", "budget_result"),
+    ("weather", "weather_result"),
+    ("travel", "travel_result"),
+    ("booking", "booking_result"),
+    ("traffic", "traffic_result"),
+    ("scheduler", "scheduler_result"),
+    ("safety", "safety_result"),
+]
 
-def _select_route(state: AgentState) -> str:
-    for route in (state.get("route"), state.get("current_task"), state.get("next_step")):
-        if route in RESULT_FORMATTERS:
-            return route
-    return ""
+SECTION_LABELS = {
+    "budget": "預算估算",
+    "weather": "天氣",
+    "travel": "景點",
+    "booking": "訂房",
+    "traffic": "交通",
+    "scheduler": "行程排程",
+    "safety": "安全提醒",
+}
+
+
+def _render_result(route: str, result: dict[str, Any]) -> str:
+    """優先用該類別的 formatter；若結果形狀不符（真實 API/coder 產出的 JSON），退回 json.dumps。"""
+    formatter = RESULT_FORMATTERS.get(route)
+    if formatter:
+        try:
+            return formatter(result)
+        except Exception:
+            pass
+    return json.dumps(result, ensure_ascii=False, indent=2)
 
 
 def final_response_node(state: AgentState):
-    route = _select_route(state)
-    result_key = RESULT_KEYS.get(route, "")
-    result = state.get(result_key, {}) if result_key else {}
+    sections: list[str] = []
 
-    if route and isinstance(result, dict) and result:
-        final_answer = RESULT_FORMATTERS[route](result)
+    tier = state.get("budget_tier")
+    if tier:
+        sections.append(f"● 預算階層：{tier}")
+
+    for route, state_key in AGG_ORDER:
+        result = state.get(state_key)
+        if isinstance(result, dict) and result:
+            sections.append(f"● {SECTION_LABELS[route]}：{_render_result(route, result)}")
+
+    if sections:
+        final_answer = "為您整理本次旅遊規劃結果如下：\n\n" + "\n\n".join(sections)
     else:
         final_answer = FALLBACK_ANSWER
 
