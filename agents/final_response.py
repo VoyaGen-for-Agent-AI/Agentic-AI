@@ -41,6 +41,14 @@ def format_booking_response(result: dict[str, Any]) -> str:
 
 
 def format_budget_response(result: dict[str, Any]) -> str:
+    if "total_estimated_cost" in result:
+        return (
+            f"總預算 {result['total_budget']} 元，"
+            f"預估總花費 {result['total_estimated_cost']} 元，"
+            f"剩餘 {result['remaining_budget']} 元。"
+            f"{result['suggestion']}"
+        )
+
     return (
         f"總預算 {result['currency']} {result['budget_total']}，"
         f"剩餘可用預算 {result['currency']} {result['budget_remaining']}"

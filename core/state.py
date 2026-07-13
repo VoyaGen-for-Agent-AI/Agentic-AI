@@ -25,6 +25,8 @@ class AgentState(TypedDict):
     booking_result: dict[str, Any]
     budget_allocation: dict[str, Any]
     budget_result: dict[str, Any]
+    transport_result: dict[str, Any]
+    itinerary_result: dict[str, Any]
     scheduler_result: dict[str, Any]
     safety_result: dict[str, Any]
     traffic_result: dict[str, Any]

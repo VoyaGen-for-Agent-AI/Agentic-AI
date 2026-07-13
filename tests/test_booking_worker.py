@@ -82,6 +82,26 @@ def test_booking_prefers_budget_friendly_hotel():
     assert recommended_hotel["price_per_night"] <= hotel_budget
 
 
+def test_booking_uses_existing_hotel_budget_allocation():
+    result = booking_node(
+        make_state(
+            total_budget=10000,
+            budget_allocation={
+                "hotel_budget": 1800,
+                "transport_budget": 2500,
+                "food_budget": 3000,
+                "activity_budget": 1000,
+                "buffer_budget": 1700,
+            },
+            preferred_areas=["逢甲"],
+            preference="便宜",
+        )
+    )
+
+    assert result["budget_allocation"]["hotel_budget"] == 1800
+    assert result["booking_result"]["recommended_hotel"]["price_per_night"] <= 1800
+
+
 def test_booking_prefers_preferred_area():
     station_hotel = {
         "name": "台中車站附近商旅 A",

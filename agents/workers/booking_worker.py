@@ -105,10 +105,14 @@ def booking_node(state: AgentState) -> dict[str, Any]:
     preference = str(_state_value(state, "preference", default="交通方便"))
 
     budget_allocation = state.get("budget_allocation")  # type: ignore[typeddict-item]
-    if not isinstance(budget_allocation, dict) or not budget_allocation:
+    if (
+        not isinstance(budget_allocation, dict)
+        or not budget_allocation
+        or "hotel_budget" not in budget_allocation
+    ):
         budget_allocation = allocate_budget(total_budget, days, nights, preference)
 
-    hotel_budget = int(budget_allocation.get("hotel_budget", total_budget * 0.4))
+    hotel_budget = int(budget_allocation["hotel_budget"])
 
     hotel_source = TAICHUNG_HOTELS if destination == "台中" else TAICHUNG_HOTELS
     if not hotel_source:
