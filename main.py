@@ -118,6 +118,7 @@ workflow.add_conditional_edges(
     lambda x: x.get("next_step", "FINISH"),
     {
         "coder": "coder",
+        "final_response": "final_response",
         "FINISH": END
     }
 )
@@ -134,6 +135,7 @@ workflow.add_conditional_edges(
     lambda x: x.get("next_step", "FINISH"),
     {
         "coder": "coder",
+        "final_response": "final_response",
         "FINISH": END
     }
 )
@@ -150,6 +152,7 @@ workflow.add_conditional_edges(
     lambda x: x.get("next_step", "FINISH"),
     {
         "coder": "coder",
+        "final_response": "final_response",
         "FINISH": END
     }
 )

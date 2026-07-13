@@ -202,5 +202,5 @@ def budget_node(state: AgentState) -> dict[str, Any]:
         "budget_result": budget_result,
         "budget_allocation": budget_allocation,
         "current_task": "budget",
-        "next_step": "coder",
+        "next_step": "final_response",
     }

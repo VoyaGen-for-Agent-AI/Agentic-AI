@@ -63,7 +63,7 @@ def test_booking_node_returns_candidates():
     assert result["booking_result"]["recommended_hotel"] is not None
     assert result["budget_allocation"]["hotel_budget"] == 2400
     assert result["current_task"] == "booking"
-    assert result["next_step"] == "coder"
+    assert result["next_step"] == "final_response"
 
 
 def test_booking_prefers_budget_friendly_hotel():

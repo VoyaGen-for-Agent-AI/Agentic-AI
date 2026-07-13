@@ -14,6 +14,9 @@ def format_weather_response(result: dict[str, Any]) -> str:
 
 
 def format_travel_response(result: dict[str, Any]) -> str:
+    if "schedule" in result:
+        return format_itinerary_response(result)
+
     spots = "、".join(result["spots"])
     return (
         f"建議前往 {result['destination']}，行程長度 {result['duration']}，"
@@ -21,14 +24,39 @@ def format_travel_response(result: dict[str, Any]) -> str:
     )
 
 
+def format_itinerary_response(result: dict[str, Any]) -> str:
+    lines = [
+        "一、行程安排",
+        f"目的地：{result.get('destination', '未指定')}",
+        f"行程天數：{result.get('days', '')} 天",
+    ]
+
+    for day_plan in result.get("schedule", []):
+        lines.append(f"Day {day_plan.get('day')}")
+        for item in day_plan.get("items", []):
+            lines.append(
+                f"- {item.get('time', '')} {item.get('place', '')}："
+                f"{item.get('activity', '')}。"
+                f"安排原因：{item.get('reason', '')}"
+            )
+
+    if result.get("transport_hint"):
+        lines.append(f"交通提示：{result['transport_hint']}")
+    if result.get("planning_reason"):
+        lines.append(f"規劃理由：{result['planning_reason']}")
+
+    return "\n".join(lines)
+
+
 def format_booking_response(result: dict[str, Any]) -> str:
     recommended_hotel = result.get("recommended_hotel")
     if isinstance(recommended_hotel, dict):
         return (
-            f"推薦住宿：{recommended_hotel['name']}，位於 {recommended_hotel['area']}，"
-            f"每晚 {recommended_hotel['price_per_night']} 元，"
-            f"總價 {recommended_hotel['total_price']} 元。"
-            f"{recommended_hotel['reason']}"
+            "住宿建議：\n"
+            f"推薦 {recommended_hotel['name']}，位於 {recommended_hotel['area']}，"
+            f"約 {recommended_hotel['price_per_night']} 元 / 晚，"
+            f"總價 {recommended_hotel['total_price']} 元。\n"
+            f"推薦原因：{recommended_hotel['reason']}"
         )
 
     hotels = result.get("hotels", [])
@@ -42,11 +70,30 @@ def format_booking_response(result: dict[str, Any]) -> str:
 
 def format_budget_response(result: dict[str, Any]) -> str:
     if "total_estimated_cost" in result:
+        status_labels = {
+            "comfortable": "預算充足",
+            "tight": "預算偏緊",
+            "over_budget": "已超出預算",
+        }
+        breakdown = result.get("breakdown", {})
+        budget_delta = (
+            f"剩餘預算：{result['remaining_budget']} 元"
+            if result.get("remaining_budget", 0) >= 0
+            else f"超支金額：{result.get('over_budget_amount', abs(result['remaining_budget']))} 元"
+        )
         return (
-            f"總預算 {result['total_budget']} 元，"
-            f"預估總花費 {result['total_estimated_cost']} 元，"
-            f"剩餘 {result['remaining_budget']} 元。"
-            f"{result['suggestion']}"
+            "預算估算：\n"
+            f"總預算：{result['total_budget']} 元\n"
+            f"預估總花費：{result['total_estimated_cost']} 元\n"
+            f"{budget_delta}\n"
+            f"狀態：{status_labels.get(result['status'], result['status'])} ({result['status']})\n\n"
+            "花費明細：\n"
+            f"住宿：{breakdown.get('hotel', 0)} 元\n"
+            f"交通：{breakdown.get('transport', 0)} 元\n"
+            f"飲食：{breakdown.get('food', 0)} 元\n"
+            f"活動 / 門票：{breakdown.get('activity', 0)} 元\n"
+            f"預留金：{breakdown.get('buffer', 0)} 元\n\n"
+            f"建議：{result['suggestion']}"
         )
 
     return (
@@ -74,6 +121,7 @@ def format_safety_response(result: dict[str, Any]) -> str:
 RESULT_FORMATTERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "weather": format_weather_response,
     "travel": format_travel_response,
+    "itinerary": format_itinerary_response,
     "booking": format_booking_response,
     "budget": format_budget_response,
     "scheduler": format_scheduler_response,
@@ -83,6 +131,7 @@ RESULT_FORMATTERS: dict[str, Callable[[dict[str, Any]], str]] = {
 RESULT_KEYS = {
     "weather": "weather_result",
     "travel": "travel_result",
+    "itinerary": "itinerary_result",
     "booking": "booking_result",
     "budget": "budget_result",
     "scheduler": "scheduler_result",
@@ -100,6 +149,36 @@ def _select_route(state: AgentState) -> str:
 
 
 def final_response_node(state: AgentState):
+    itinerary_result = state.get("itinerary_result", {})
+    booking_result = state.get("booking_result", {})
+    budget_result = state.get("budget_result", {})
+    has_itinerary_result = isinstance(itinerary_result, dict) and bool(itinerary_result)
+    has_booking_result = isinstance(booking_result, dict) and bool(booking_result)
+    has_budget_result = isinstance(budget_result, dict) and bool(budget_result)
+
+    if has_itinerary_result and (has_booking_result or has_budget_result):
+        sections = [format_itinerary_response(itinerary_result)]
+        if has_booking_result:
+            sections.append(f"二、{format_booking_response(booking_result)}")
+        if has_budget_result:
+            sections.append(f"三、{format_budget_response(budget_result)}")
+        sections.append("四、總結建議\n請依天氣與現場狀況保留彈性，預算則以明細為基準控管。")
+        final_answer = "\n\n".join(sections)
+        return {
+            "final_answer": final_answer,
+            "messages": [AIMessage(content=final_answer)],
+        }
+
+    if has_booking_result and has_budget_result:
+        final_answer = (
+            f"{format_booking_response(booking_result)}\n\n"
+            f"{format_budget_response(budget_result)}"
+        )
+        return {
+            "final_answer": final_answer,
+            "messages": [AIMessage(content=final_answer)],
+        }
+
     route = _select_route(state)
     result_key = RESULT_KEYS.get(route, "")
     result = state.get(result_key, {}) if result_key else {}

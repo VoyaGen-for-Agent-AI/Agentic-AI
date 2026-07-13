@@ -136,7 +136,7 @@ def test_budget_node_returns_budget_result():
     assert "breakdown" in result["budget_result"]
     assert "allocation" in result["budget_result"]
     assert result["current_task"] == "budget"
-    assert result["next_step"] == "coder"
+    assert result["next_step"] == "final_response"
 
 
 def test_budget_node_handles_invalid_total_budget():

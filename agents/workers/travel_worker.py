@@ -1,60 +1,70 @@
+import json
 import os
+import re
+from json import JSONDecodeError
+from typing import Any
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+
 from core.state import AgentState
-from prompts.travel_prompt import TRAVEL_PROMPT
-import time
+from prompts.itinerary_prompt import ITINERARY_SYSTEM_PROMPT
 
-def travel_node(state: AgentState):
-    print("🗺️  [Travel Worker] 正在解析使用者行程規劃需求...")
-    time.sleep(5)
 
-    # 1. 初始化 Travel 專員的大腦
+def _extract_json(content: str) -> str:
+    markdown_match = re.search(r"```(?:json)?\s*(.*?)\s*```", content, re.DOTALL)
+    if markdown_match:
+        return markdown_match.group(1).strip()
+    return content.strip()
+
+
+def _last_user_request(state: AgentState) -> str:
+    if state.get("user_query"):
+        return str(state["user_query"])
+    if state.get("messages"):
+        return str(state["messages"][0].content)
+    return "請規劃台中兩天一夜行程。"
+
+
+def itinerary_node(state: AgentState) -> dict[str, Any]:
+    print("🗺️  [Itinerary Agent] 正在產生 AI 行程規劃...")
+
     llm = ChatOpenAI(
         base_url="https://openrouter.ai/api/v1",
-        #model="google/gemma-4-26b-a4b-it:free",
-        #model="liquid/lfm-2.5-1.2b-thinking:free",
         model="meta-llama/llama-3.3-70b-instruct:free",
-        #model="openai/gpt-oss-20b:free",
-        api_key=os.getenv("OPENAI_API_KEY") # type: ignore
+        api_key=os.getenv("OPENAI_API_KEY"),  # type: ignore
     )
-    ##############付費#################
-    # llm = ChatOpenAI(
-    #     base_url="https://openrouter.ai/api/v1",
-    #     model="meta-llama/llama-3.1-8b-instruct",
-    #     api_key=os.getenv("OPENAI_API_KEY"), # type: ignore
-    #     extra_body={
-    #         "provider": {
-    #             "order": ["DeepInfra","NovitaAI"],
-    #             "ignore": ["Cloudflare","Groq"],
-    #             "allow_fallbacks": True
-    #         }
-    #     } 
-    # )
-    ################################# 
 
-    # 2. 抓取使用者的原始問題 (通常是最一開始的那句話)
-    user_input = state["messages"][0].content
-
-    # 3. 組裝訊息，讓 LLM 根據 prompt 萃取目的地與天數並生成規格
     messages = [
-        SystemMessage(content=TRAVEL_PROMPT),
-        HumanMessage(content=f"使用者輸入：{user_input}")
+        SystemMessage(content=ITINERARY_SYSTEM_PROMPT),
+        HumanMessage(content=f"使用者需求：{_last_user_request(state)}"),
     ]
 
     try:
         response = llm.invoke(messages)
-
-        print(f"📋  [Travel Worker] 需求規格產生完成，準備交接給 Coder。")
-
-        # 4. 更新狀態機
-        # 把這份規格書加進對話紀錄中，這樣 Coder 的 last_request 才能完美接到這句話
+        parsed = json.loads(_extract_json(str(response.content)))
+    except (JSONDecodeError, TypeError, ValueError):
         return {
-            "messages": [response],
+            "execution_status": "error",
+            "error_traceback": "Invalid itinerary JSON",
             "current_task": "travel",
-            "next_step": "coder" # 指派下一步給 Coder Agent 去寫 Code
+            "next_step": "FINISH",
+        }
+    except Exception as exc:
+        return {
+            "execution_status": "error",
+            "error_traceback": str(exc),
+            "current_task": "travel",
+            "next_step": "FINISH",
         }
 
-    except Exception as e:
-        print(f"⚠️  [Travel Worker] 發生錯誤: {e}")
-        return {"next_step": "FINISH"}
+    return {
+        "itinerary_result": parsed,
+        "travel_result": parsed,
+        "current_task": "travel",
+        "next_step": "final_response",
+    }
+
+
+def travel_node(state: AgentState) -> dict[str, Any]:
+    return itinerary_node(state)
