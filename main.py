@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
-from langfuse.langchain import CallbackHandler
+from core.observability import get_langfuse_callbacks
 from core.state import AgentState
 from agents.supervisor import create_supervisor_node
 from agents.final_response import final_response_node
@@ -55,9 +55,6 @@ llm = ChatOpenAI(
 # )
 ################################# 
 supervisor_chain = create_supervisor_node(llm)
-
-# 1. 初始化 Langfuse Callback Handler（v4 從環境變數讀取 LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST）
-langfuse_handler = CallbackHandler()
 
 # 定義一個外層函式來處理狀態流轉
 def supervisor_node(state: AgentState):
@@ -187,7 +184,7 @@ app_graph = workflow.compile()
 def chat_test(query: str):
     # 將 handler 透過 config 傳入 invoke
     # 這會確保整個 Graph 的執行過程都被 Langfuse 記錄下來
-    config = {"callbacks": [langfuse_handler]}
+    config = {"callbacks": get_langfuse_callbacks()}
     
     # 將使用者的問題包裝成 HumanMessage 送進去跑
     result = app_graph.invoke({"messages": [HumanMessage(content=query)]}, config)# type: ignore
