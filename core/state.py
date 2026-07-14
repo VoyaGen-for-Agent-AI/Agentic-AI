@@ -18,6 +18,22 @@ class AgentState(TypedDict):
     # 紀錄 Supervisor 決定要派發給誰 (例如: "travel", 或 "FINISH")
     next_step: str
 
+    # Trip parser 解析出的旅遊需求
+    trip_request: dict[str, Any]
+    origin: str
+    departure_station: str
+    destination: str
+    start_date: str
+    end_date: str
+    days: int
+    nights: int
+    party_size: int
+    total_budget: int
+    preference: str
+    needs_booking: bool
+    needs_budget: bool
+    preferred_areas: list[str]
+
     # Mock workers 的結構化結果
     weather_result: dict[str, Any]
     movie_result: dict[str, Any]

@@ -26,6 +26,21 @@ def _last_user_request(state: AgentState) -> str:
     return "請規劃台中兩天一夜行程。"
 
 
+def _trip_context(state: AgentState) -> str:
+    fields = {
+        "origin": state.get("origin"),
+        "departure_station": state.get("departure_station"),
+        "destination": state.get("destination"),
+        "start_date": state.get("start_date"),
+        "end_date": state.get("end_date"),
+        "days": state.get("days"),
+        "nights": state.get("nights"),
+        "preference": state.get("preference"),
+        "total_budget": state.get("total_budget"),
+    }
+    return "\n".join(f"{key}: {value}" for key, value in fields.items() if value not in (None, "", []))
+
+
 def itinerary_node(state: AgentState) -> dict[str, Any]:
     print("🗺️  [Itinerary Agent] 正在產生 AI 行程規劃...")
 
@@ -37,7 +52,12 @@ def itinerary_node(state: AgentState) -> dict[str, Any]:
 
     messages = [
         SystemMessage(content=ITINERARY_SYSTEM_PROMPT),
-        HumanMessage(content=f"使用者需求：{_last_user_request(state)}"),
+        HumanMessage(
+            content=(
+                f"使用者需求：{_last_user_request(state)}\n\n"
+                f"已解析旅遊欄位：\n{_trip_context(state)}"
+            )
+        ),
     ]
 
     try:

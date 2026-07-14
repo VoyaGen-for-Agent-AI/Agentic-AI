@@ -48,6 +48,25 @@ def format_itinerary_response(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def format_trip_request_summary(result: dict[str, Any]) -> str:
+    if not result:
+        return ""
+
+    dates = ""
+    if result.get("start_date") or result.get("end_date"):
+        dates = f"日期：{result.get('start_date', '')} ~ {result.get('end_date', '')}\n"
+
+    return (
+        "需求摘要：\n"
+        f"出發地：{result.get('origin', '未指定')}（{result.get('departure_station', '未指定')}）\n"
+        f"目的地：{result.get('destination', '未指定')}\n"
+        f"{dates}"
+        f"天數：{result.get('days', '')} 天 {result.get('nights', '')} 夜\n"
+        f"總預算：{result.get('total_budget', '')} 元\n"
+        f"偏好：{result.get('preference', '')}"
+    )
+
+
 def format_booking_response(result: dict[str, Any]) -> str:
     recommended_hotel = result.get("recommended_hotel")
     if isinstance(recommended_hotel, dict):
@@ -149,6 +168,7 @@ def _select_route(state: AgentState) -> str:
 
 
 def final_response_node(state: AgentState):
+    trip_request = state.get("trip_request", {})  # type: ignore[typeddict-item]
     itinerary_result = state.get("itinerary_result", {})
     booking_result = state.get("booking_result", {})
     budget_result = state.get("budget_result", {})
@@ -157,7 +177,10 @@ def final_response_node(state: AgentState):
     has_budget_result = isinstance(budget_result, dict) and bool(budget_result)
 
     if has_itinerary_result and (has_booking_result or has_budget_result):
-        sections = [format_itinerary_response(itinerary_result)]
+        sections = []
+        if isinstance(trip_request, dict) and trip_request:
+            sections.append(format_trip_request_summary(trip_request))
+        sections.append(format_itinerary_response(itinerary_result))
         if has_booking_result:
             sections.append(f"二、{format_booking_response(booking_result)}")
         if has_budget_result:
@@ -170,10 +193,11 @@ def final_response_node(state: AgentState):
         }
 
     if has_booking_result and has_budget_result:
-        final_answer = (
-            f"{format_booking_response(booking_result)}\n\n"
-            f"{format_budget_response(budget_result)}"
-        )
+        sections = []
+        if isinstance(trip_request, dict) and trip_request:
+            sections.append(format_trip_request_summary(trip_request))
+        sections.extend([format_booking_response(booking_result), format_budget_response(budget_result)])
+        final_answer = "\n\n".join(sections)
         return {
             "final_answer": final_answer,
             "messages": [AIMessage(content=final_answer)],
@@ -187,6 +211,9 @@ def final_response_node(state: AgentState):
         final_answer = RESULT_FORMATTERS[route](result)
     else:
         final_answer = FALLBACK_ANSWER
+
+    if isinstance(trip_request, dict) and trip_request and final_answer != FALLBACK_ANSWER:
+        final_answer = f"{format_trip_request_summary(trip_request)}\n\n{final_answer}"
 
     return {
         "final_answer": final_answer,
