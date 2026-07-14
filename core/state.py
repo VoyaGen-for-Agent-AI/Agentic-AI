@@ -58,9 +58,10 @@ class AgentState(TypedDict):
 
     # Critic Agent 的錯誤分類結果
     critic_result: Optional[Dict[str, Any]]
+    critic_feedback: Optional[Dict[str, Any]]
 
     # 執行狀態
-    execution_status: Literal["success", "error", "timeout", "empty_result"]
+    execution_status: Literal["success", "error", "timeout", "empty_result", "over_budget"]
 
     # 紀錄重試次數，避免無限迴圈
     retry_count: int

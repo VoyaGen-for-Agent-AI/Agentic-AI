@@ -67,6 +67,16 @@ def format_trip_request_summary(result: dict[str, Any]) -> str:
     )
 
 
+def format_critic_feedback(result: dict[str, Any]) -> str:
+    return (
+        "系統診斷：\n"
+        f"錯誤類型：{result.get('error_type', 'unknown_error')}\n"
+        f"錯誤原因：{result.get('reason', '')}\n"
+        f"修復建議：{result.get('fix_strategy', '')}\n"
+        f"Fallback 策略：{result.get('fallback_strategy', '')}"
+    )
+
+
 def format_booking_response(result: dict[str, Any]) -> str:
     recommended_hotel = result.get("recommended_hotel")
     if isinstance(recommended_hotel, dict):
@@ -172,9 +182,11 @@ def final_response_node(state: AgentState):
     itinerary_result = state.get("itinerary_result", {})
     booking_result = state.get("booking_result", {})
     budget_result = state.get("budget_result", {})
+    critic_feedback = state.get("critic_feedback") or state.get("critic_result") or {}
     has_itinerary_result = isinstance(itinerary_result, dict) and bool(itinerary_result)
     has_booking_result = isinstance(booking_result, dict) and bool(booking_result)
     has_budget_result = isinstance(budget_result, dict) and bool(budget_result)
+    has_critic_feedback = isinstance(critic_feedback, dict) and bool(critic_feedback)
 
     if has_itinerary_result and (has_booking_result or has_budget_result):
         sections = []
@@ -186,6 +198,8 @@ def final_response_node(state: AgentState):
         if has_budget_result:
             sections.append(f"三、{format_budget_response(budget_result)}")
         sections.append("四、總結建議\n請依天氣與現場狀況保留彈性，預算則以明細為基準控管。")
+        if has_critic_feedback:
+            sections.append(format_critic_feedback(critic_feedback))
         final_answer = "\n\n".join(sections)
         return {
             "final_answer": final_answer,
@@ -197,6 +211,8 @@ def final_response_node(state: AgentState):
         if isinstance(trip_request, dict) and trip_request:
             sections.append(format_trip_request_summary(trip_request))
         sections.extend([format_booking_response(booking_result), format_budget_response(budget_result)])
+        if has_critic_feedback:
+            sections.append(format_critic_feedback(critic_feedback))
         final_answer = "\n\n".join(sections)
         return {
             "final_answer": final_answer,
@@ -214,6 +230,11 @@ def final_response_node(state: AgentState):
 
     if isinstance(trip_request, dict) and trip_request and final_answer != FALLBACK_ANSWER:
         final_answer = f"{format_trip_request_summary(trip_request)}\n\n{final_answer}"
+    if has_critic_feedback:
+        if final_answer == FALLBACK_ANSWER:
+            final_answer = format_critic_feedback(critic_feedback)
+        else:
+            final_answer = f"{final_answer}\n\n{format_critic_feedback(critic_feedback)}"
 
     return {
         "final_answer": final_answer,
