@@ -11,19 +11,19 @@ RESULT_KEYS = {
     "travel": "travel_result",
     "booking": "booking_result",
     "budget": "budget_result",
-    "scheduler": "scheduler_result",
     "traffic": "traffic_result",
+    "scheduler": "scheduler_result",
 }
-
-NON_TASK_STEPS = {"coder", "e2b_sandbox", "parser", "final_response", "FINISH"}
 
 
 def _select_result_key(state: AgentState) -> str:
-    for task in (state.get("current_task"), state.get("route"), state.get("next_step")):
-        if task in NON_TASK_STEPS:
-            continue
-        if task in RESULT_KEYS:
-            return RESULT_KEYS[task]
+    # stage sub-graph 會直接指定要寫入的 result key，優先採用
+    explicit_key = state.get("result_key")
+    if explicit_key:
+        return explicit_key
+    for route in (state.get("route"), state.get("current_task"), state.get("next_step")):
+        if route in RESULT_KEYS:
+            return RESULT_KEYS[route]
     return ""
 
 

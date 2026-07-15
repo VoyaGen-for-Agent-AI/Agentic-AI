@@ -37,6 +37,9 @@ def _trip_context(state: AgentState) -> str:
         "nights": state.get("nights"),
         "preference": state.get("preference"),
         "total_budget": state.get("total_budget"),
+        "weather_result": state.get("weather_result"),
+        "traffic_result": state.get("traffic_result"),
+        "booking_result": state.get("booking_result"),
     }
     return "\n".join(f"{key}: {value}" for key, value in fields.items() if value not in (None, "", []))
 
@@ -45,9 +48,9 @@ def itinerary_node(state: AgentState) -> dict[str, Any]:
     print("🗺️  [Itinerary Agent] 正在產生 AI 行程規劃...")
 
     llm = ChatOpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        model="meta-llama/llama-3.3-70b-instruct:free",
-        api_key=os.getenv("OPENAI_API_KEY"),  # type: ignore
+        base_url=os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
+        model=os.getenv("ITINERARY_MODEL", os.getenv("LLM_MODEL", "openrouter/free")),
+        api_key=os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"),  # type: ignore
     )
 
     messages = [

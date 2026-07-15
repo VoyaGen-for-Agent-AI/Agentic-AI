@@ -81,3 +81,74 @@ def test_successful_fake_sandbox_returns_stdout(monkeypatch):
     assert result["stdout"] == "hello\n"
     assert result["stderr"] == ""
     assert result["error"] is None
+
+
+def test_allowlisted_api_keys_are_injected_into_sandbox(monkeypatch):
+    """白名單金鑰應注入沙盒 envs，敏感金鑰（OPENAI/E2B）不得外流到沙盒。"""
+    captured = {}
+
+    class FakeSandbox:
+        def __init__(self, api_key):
+            self.api_key = api_key
+
+        def run_code(self, code, envs=None):
+            captured["envs"] = envs
+            return SimpleNamespace(
+                logs=SimpleNamespace(stdout=["ok\n"], stderr=[]),
+                error=None,
+            )
+
+        def close(self):
+            pass
+
+    monkeypatch.setenv("E2B_API_KEY", "test-key")
+    monkeypatch.setenv("OPENWEATHER_API_KEY", "ow-123")
+    monkeypatch.setenv("TAVILY_API_KEY", "tv-456")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
+    monkeypatch.setattr(
+        sandbox_module.importlib,
+        "import_module",
+        lambda module_name: SimpleNamespace(Sandbox=FakeSandbox),
+    )
+
+    result = run_python_in_sandbox("print('ok')")
+
+    assert result["status"] == "success"
+    assert captured["envs"] == {"OPENWEATHER_API_KEY": "ow-123", "TAVILY_API_KEY": "tv-456"}
+    # 敏感金鑰不得被送進沙盒
+    assert "OPENAI_API_KEY" not in captured["envs"]
+    assert "E2B_API_KEY" not in captured["envs"]
+
+
+def test_placeholder_api_keys_are_not_injected(monkeypatch):
+    """佔位符值（例如逗號）不應被當成有效金鑰注入。"""
+    captured = {}
+
+    class FakeSandbox:
+        def __init__(self, api_key):
+            self.api_key = api_key
+
+        def run_code(self, code, envs=None):
+            captured["envs"] = envs
+            return SimpleNamespace(
+                logs=SimpleNamespace(stdout=["ok\n"], stderr=[]),
+                error=None,
+            )
+
+        def close(self):
+            pass
+
+    monkeypatch.setenv("E2B_API_KEY", "test-key")
+    monkeypatch.setenv("OPENWEATHER_API_KEY", ",")
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.setattr(
+        sandbox_module.importlib,
+        "import_module",
+        lambda module_name: SimpleNamespace(Sandbox=FakeSandbox),
+    )
+
+    result = run_python_in_sandbox("print('ok')")
+
+    assert result["status"] == "success"
+    # 沒有有效金鑰時不注入任何 env（None 或 {} 皆代表未注入）
+    assert not captured["envs"]

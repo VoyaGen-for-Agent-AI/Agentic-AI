@@ -1,37 +1,46 @@
-from typing import Literal
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
+"""Supervisor：確定性的編排 hub。
 
-# 1. 定義 Prompt
-SUPERVISOR_PROMPT = """
-你是這個專業旅遊規劃團隊的主管，負責將使用者的請求精準路由給最適合的專員。
-你的團隊有以下七位專員：
-1. weather: 天氣專員。負責查詢目標城市的即時天氣、溫濕度與降雨機率。
-2. travel: 行程規劃專員。負責發散思考，推薦景點清單（例如網美景點、歷史名勝等）。
-3. booking: 訂房/預約專員。負責處理外部 API 調用，找尋特定區域（例如日月潭、台北101等景點周邊）的短期住宿與餐廳並進行比價。
-4. budget: 預算估算專員。負責搜尋當地物價、匯率與平均花費，估算旅遊行程的總花費。
-5. scheduler: 行程編輯員。負責將景點視為節點，計算點對點交通時間，並利用演算法思維排出最佳化移動路徑 (TSP)。
-6. safety: 突發狀況官。負責處理負面邊界情況（如迷路、API 錯誤、行程超載），並觸發反思與修正機制。
-7. traffic: 交通規劃專員。負責規劃起點、終點與停靠點之間的交通方式與車程時長。
+不再用 LLM 猜下一步，而是依「已完成的 stage」決定固定的執行順序：
 
-請根據使用者的輸入，決定下一步該交給誰。如果已經完成所有任務，請回傳 "FINISH"。
-只能從 ["weather", "travel", "booking", "budget", "scheduler", "safety", "traffic", "FINISH"] 中選擇一個回傳，不要回覆其他多餘的文字。
+    budget → weather → [travel, booking 平行] → traffic → scheduler → FINISH
+
+每個 stage 跑完都會回到 supervisor，由 supervisor 決定下一棒；並用 stage_logs
+（而不是 result 是否存在）來判斷進度，這樣即使某個 stage 因為外部 API/E2B 失敗
+沒有產出 result，流程仍會往前走，不會卡在原地無限迴圈。
 """
 
-# 2. 定義嚴格的輸出資料模型 (Pydantic)
-class Route(BaseModel):
-    next_step: Literal["weather", "travel", "booking", "budget", "scheduler", "safety", "traffic", "FINISH"] = Field(
-        description="根據使用者意圖決定的下一步路由"
-    )
+from typing import Union
+from core.state import AgentState
 
-# 3. 建立大腦節點邏輯
-def create_supervisor_node(llm: ChatOpenAI):
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", SUPERVISOR_PROMPT),
-        ("user", "{input}")
-    ])
-    
-    # 這裡的 .with_structured_output(Route)會強制 OpenAI 只吐出符合 Route 格式的 JSON。
-    supervisor_chain = prompt | llm.with_structured_output(Route)
-    return supervisor_chain
+
+# 固定的執行順序；travel 與 booking 視為同一階段（平行）
+STAGE_ORDER = ["budget", "weather", ("travel", "booking"), "traffic", "scheduler"]
+
+
+def _completed_stages(state: AgentState) -> set[str]:
+    logs = state.get("stage_logs") or []
+    return {
+        stage
+        for log in logs
+        if isinstance(log, dict) and isinstance(stage := log.get("stage"), str)
+    }
+
+
+def supervisor_node(state: AgentState) -> dict:
+    """純編排節點：本身不改變狀態，只作為回流的匯集點。"""
+    return {}
+
+
+def route_next(state: AgentState) -> Union[str, list[str]]:
+    """依已完成的 stage 決定下一步；回傳 list 代表要平行 fan-out。"""
+    done = _completed_stages(state)
+
+    for step in STAGE_ORDER:
+        if isinstance(step, tuple):
+            pending = [s for s in step if s not in done]
+            if pending:
+                return pending  # travel / booking 平行處理
+        elif step not in done:
+            return step
+
+    return "FINISH"

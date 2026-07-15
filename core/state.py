@@ -1,6 +1,8 @@
-from typing import TypedDict, Annotated, Sequence, Literal, Any, Dict, Optional
-from langchain_core.messages import BaseMessage
+from typing import Annotated, Any, Dict, Literal, Optional, Sequence, TypedDict
 import operator
+
+from langchain_core.messages import BaseMessage
+
 
 class AgentState(TypedDict):
     # 儲存所有的對話紀錄
@@ -10,7 +12,18 @@ class AgentState(TypedDict):
     user_query: str
 
     # Supervisor 決定的任務路由
-    route: Literal["weather", "travel", "booking", "budget", "scheduler", "safety", "traffic", "final_response", "multi", "unknown"]
+    route: Literal[
+        "weather",
+        "travel",
+        "booking",
+        "budget",
+        "scheduler",
+        "safety",
+        "traffic",
+        "final_response",
+        "multi",
+        "unknown",
+    ]
 
     # 目前正在處理的任務描述
     current_task: str
@@ -34,18 +47,26 @@ class AgentState(TypedDict):
     needs_budget: bool
     preferred_areas: list[str]
 
-    # Mock workers 的結構化結果
+    # 預算管家判斷出的預算階層 (窮遊 / 適中 / 寬裕)
+    budget_tier: str
+
+    # 各 stage / worker 的結構化結果
     weather_result: dict[str, Any]
     movie_result: dict[str, Any]
     travel_result: dict[str, Any]
+    itinerary_result: dict[str, Any]
     booking_result: dict[str, Any]
     budget_allocation: dict[str, Any]
     budget_result: dict[str, Any]
     transport_result: dict[str, Any]
-    itinerary_result: dict[str, Any]
+    traffic_result: dict[str, Any]
+    spot_result: dict[str, Any]
     scheduler_result: dict[str, Any]
     safety_result: dict[str, Any]
-    traffic_result: dict[str, Any]
+
+    # 每個 stage 執行完後附加的觀測紀錄 (stage 名稱 / 產生的 code / stdout / 狀態)
+    # 使用 operator.add 讓平行的 travel / booking stage 可以安全合併，不會互相覆蓋
+    stage_logs: Annotated[list[dict[str, Any]], operator.add]
 
     # Sandbox / action execution 相關欄位
     generated_code: str

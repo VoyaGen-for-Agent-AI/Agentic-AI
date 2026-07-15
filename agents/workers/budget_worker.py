@@ -83,8 +83,11 @@ def calculate_actual_cost(state: AgentState) -> dict[str, Any]:
         used_fallbacks.append("hotel_cost")
 
     transport_result = state.get("transport_result", {})  # type: ignore[typeddict-item]
+    traffic_result = state.get("traffic_result", {})  # type: ignore[typeddict-item]
     if isinstance(transport_result, dict) and transport_result.get("total_transport_cost") is not None:
         transport_cost = _to_int(transport_result["total_transport_cost"], 0)
+    elif isinstance(traffic_result, dict) and traffic_result.get("total_transport_cost") is not None:
+        transport_cost = _to_int(traffic_result["total_transport_cost"], 0)
     else:
         transport_cost = _to_int(allocation.get("transport_budget"), 500)
         used_fallbacks.append("transport_cost")
@@ -97,8 +100,11 @@ def calculate_actual_cost(state: AgentState) -> dict[str, Any]:
         used_fallbacks.append("food_cost")
 
     itinerary_result = state.get("itinerary_result", {})  # type: ignore[typeddict-item]
+    spot_result = state.get("spot_result", {})  # type: ignore[typeddict-item]
     if isinstance(itinerary_result, dict) and itinerary_result.get("ticket_cost_total") is not None:
         activity_cost = _to_int(itinerary_result["ticket_cost_total"], 0)
+    elif isinstance(spot_result, dict) and spot_result.get("ticket_cost_total") is not None:
+        activity_cost = _to_int(spot_result["ticket_cost_total"], 0)
     else:
         activity_cost = _to_int(allocation.get("activity_budget"), 300)
         used_fallbacks.append("activity_cost")

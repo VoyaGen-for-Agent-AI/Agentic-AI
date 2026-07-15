@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -169,6 +170,36 @@ RESULT_KEYS = {
 
 FALLBACK_ANSWER = "目前無法根據已有結果產生回覆，請提供更明確的任務或稍後再試。"
 
+AGG_ORDER: list[tuple[str, str]] = [
+    ("budget", "budget_result"),
+    ("weather", "weather_result"),
+    ("travel", "travel_result"),
+    ("booking", "booking_result"),
+    ("traffic", "traffic_result"),
+    ("scheduler", "scheduler_result"),
+    ("safety", "safety_result"),
+]
+
+SECTION_LABELS = {
+    "budget": "預算估算",
+    "weather": "天氣",
+    "travel": "景點",
+    "booking": "訂房",
+    "traffic": "交通",
+    "scheduler": "行程排程",
+    "safety": "安全提醒",
+}
+
+
+def _render_result(route: str, result: dict[str, Any]) -> str:
+    formatter = RESULT_FORMATTERS.get(route)
+    if formatter:
+        try:
+            return formatter(result)
+        except Exception:
+            pass
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
 
 def _select_route(state: AgentState) -> str:
     for route in (state.get("route"), state.get("current_task"), state.get("next_step")):
@@ -219,14 +250,26 @@ def final_response_node(state: AgentState):
             "messages": [AIMessage(content=final_answer)],
         }
 
-    route = _select_route(state)
-    result_key = RESULT_KEYS.get(route, "")
-    result = state.get(result_key, {}) if result_key else {}
+    sections: list[str] = []
+    tier = state.get("budget_tier")
+    if tier:
+        sections.append(f"● 預算階層：{tier}")
 
-    if route and isinstance(result, dict) and result:
-        final_answer = RESULT_FORMATTERS[route](result)
+    for route, state_key in AGG_ORDER:
+        result = state.get(state_key)
+        if isinstance(result, dict) and result:
+            sections.append(f"● {SECTION_LABELS[route]}：{_render_result(route, result)}")
+
+    if sections:
+        final_answer = "為您整理本次旅遊規劃結果如下：\n\n" + "\n\n".join(sections)
     else:
-        final_answer = FALLBACK_ANSWER
+        route = _select_route(state)
+        result_key = RESULT_KEYS.get(route, "")
+        result = state.get(result_key, {}) if result_key else {}
+        if route and isinstance(result, dict) and result:
+            final_answer = RESULT_FORMATTERS[route](result)
+        else:
+            final_answer = FALLBACK_ANSWER
 
     if isinstance(trip_request, dict) and trip_request and final_answer != FALLBACK_ANSWER:
         final_answer = f"{format_trip_request_summary(trip_request)}\n\n{final_answer}"
