@@ -35,9 +35,10 @@ def main() -> int:
         return 1
 
     try:
-        from main import app_graph, langfuse_handler
+        from core.observability import get_langfuse_callbacks
+        from main import app_graph
     except Exception as exc:
-        print("無法載入 main.py 的 app_graph 或 Langfuse handler。")
+        print("無法載入 main.py 的 app_graph 或 Langfuse callbacks。")
         print(f"錯誤：{exc}")
         return 1
 
@@ -47,7 +48,7 @@ def main() -> int:
     try:
         result = app_graph.invoke(
             {"messages": [HumanMessage(content=query)]},
-            config={"callbacks": [langfuse_handler]},
+            config={"callbacks": get_langfuse_callbacks()},
         )
     except Exception as exc:
         print("workflow 執行失敗，請檢查 OPENAI_API_KEY、模型設定或網路連線。")

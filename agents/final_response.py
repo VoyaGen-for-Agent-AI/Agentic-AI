@@ -15,6 +15,9 @@ def format_weather_response(result: dict[str, Any]) -> str:
 
 
 def format_travel_response(result: dict[str, Any]) -> str:
+    if "schedule" in result:
+        return format_itinerary_response(result)
+
     spots = "、".join(result["spots"])
     return (
         f"建議前往 {result['destination']}，行程長度 {result['duration']}，"
@@ -22,16 +25,107 @@ def format_travel_response(result: dict[str, Any]) -> str:
     )
 
 
-def format_booking_response(result: dict[str, Any]) -> str:
-    hotels = "、".join(result["hotels"])
-    restaurants = "、".join(result["restaurants"])
+def format_itinerary_response(result: dict[str, Any]) -> str:
+    lines = [
+        "一、行程安排",
+        f"目的地：{result.get('destination', '未指定')}",
+        f"行程天數：{result.get('days', '')} 天",
+    ]
+
+    for day_plan in result.get("schedule", []):
+        lines.append(f"Day {day_plan.get('day')}")
+        for item in day_plan.get("items", []):
+            lines.append(
+                f"- {item.get('time', '')} {item.get('place', '')}："
+                f"{item.get('activity', '')}。"
+                f"安排原因：{item.get('reason', '')}"
+            )
+
+    if result.get("transport_hint"):
+        lines.append(f"交通提示：{result['transport_hint']}")
+    if result.get("planning_reason"):
+        lines.append(f"規劃理由：{result['planning_reason']}")
+
+    return "\n".join(lines)
+
+
+def format_trip_request_summary(result: dict[str, Any]) -> str:
+    if not result:
+        return ""
+
+    dates = ""
+    if result.get("start_date") or result.get("end_date"):
+        dates = f"日期：{result.get('start_date', '')} ~ {result.get('end_date', '')}\n"
+
     return (
-        f"{result['location']} 周邊推薦住宿：{hotels}；推薦餐廳：{restaurants}。"
-        f"{result['price_comparison']}。"
+        "需求摘要：\n"
+        f"出發地：{result.get('origin', '未指定')}（{result.get('departure_station', '未指定')}）\n"
+        f"目的地：{result.get('destination', '未指定')}\n"
+        f"{dates}"
+        f"天數：{result.get('days', '')} 天 {result.get('nights', '')} 夜\n"
+        f"總預算：{result.get('total_budget', '')} 元\n"
+        f"偏好：{result.get('preference', '')}"
     )
 
 
+def format_critic_feedback(result: dict[str, Any]) -> str:
+    return (
+        "系統診斷：\n"
+        f"錯誤類型：{result.get('error_type', 'unknown_error')}\n"
+        f"錯誤原因：{result.get('reason', '')}\n"
+        f"修復建議：{result.get('fix_strategy', '')}\n"
+        f"Fallback 策略：{result.get('fallback_strategy', '')}"
+    )
+
+
+def format_booking_response(result: dict[str, Any]) -> str:
+    recommended_hotel = result.get("recommended_hotel")
+    if isinstance(recommended_hotel, dict):
+        return (
+            "住宿建議：\n"
+            f"推薦 {recommended_hotel['name']}，位於 {recommended_hotel['area']}，"
+            f"約 {recommended_hotel['price_per_night']} 元 / 晚，"
+            f"總價 {recommended_hotel['total_price']} 元。\n"
+            f"推薦原因：{recommended_hotel['reason']}"
+        )
+
+    hotels = result.get("hotels", [])
+    restaurants = result.get("restaurants", [])
+    price_comparison = result.get("price_comparison", "")
+    location = result.get("location", "目的地")
+    hotel_names = "、".join(hotels)
+    restaurant_names = "、".join(restaurants)
+    return f"{location} 周邊推薦住宿：{hotel_names}；推薦餐廳：{restaurant_names}。{price_comparison}。"
+
+
 def format_budget_response(result: dict[str, Any]) -> str:
+    if "total_estimated_cost" in result:
+        status_labels = {
+            "comfortable": "預算充足",
+            "tight": "預算偏緊",
+            "over_budget": "已超出預算",
+        }
+        breakdown = result.get("breakdown", {})
+        budget_delta = (
+            f"剩餘預算：{result['remaining_budget']} 元"
+            if result.get("remaining_budget", 0) >= 0
+            else f"超支金額：{result.get('over_budget_amount', abs(result['remaining_budget']))} 元"
+        )
+        return (
+            "預算估算：\n"
+            f"總預算：{result['total_budget']} 元\n"
+            f"預估總花費：{result['total_estimated_cost']} 元\n"
+            f"{budget_delta}\n"
+            f"狀態：{status_labels.get(result['status'], result['status'])} ({result['status']})\n\n"
+            "花費明細：\n"
+            f"住宿：{breakdown.get('hotel', 0)} 元\n"
+            f"交通：{breakdown.get('transport', 0)} 元\n"
+            f"飲食：{breakdown.get('food', 0)} 元\n"
+            f"活動 / 門票：{breakdown.get('activity', 0)} 元\n"
+            f"預留金：{breakdown.get('buffer', 0)} 元\n\n"
+            f"建議：{result['suggestion']}"
+        )
+
     return (
         f"總預算 {result['currency']} {result['budget_total']}，"
         f"剩餘可用預算 {result['currency']} {result['budget_remaining']}"
@@ -57,6 +151,7 @@ def format_safety_response(result: dict[str, Any]) -> str:
 RESULT_FORMATTERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "weather": format_weather_response,
     "travel": format_travel_response,
+    "itinerary": format_itinerary_response,
     "booking": format_booking_response,
     "budget": format_budget_response,
     "scheduler": format_scheduler_response,
@@ -66,6 +161,7 @@ RESULT_FORMATTERS: dict[str, Callable[[dict[str, Any]], str]] = {
 RESULT_KEYS = {
     "weather": "weather_result",
     "travel": "travel_result",
+    "itinerary": "itinerary_result",
     "booking": "booking_result",
     "budget": "budget_result",
     "scheduler": "scheduler_result",
@@ -74,7 +170,6 @@ RESULT_KEYS = {
 
 FALLBACK_ANSWER = "目前無法根據已有結果產生回覆，請提供更明確的任務或稍後再試。"
 
-# supervisor 收齊所有 stage 結果後，final_response 依此順序彙整成一份完整回覆
 AGG_ORDER: list[tuple[str, str]] = [
     ("budget", "budget_result"),
     ("weather", "weather_result"),
@@ -97,7 +192,6 @@ SECTION_LABELS = {
 
 
 def _render_result(route: str, result: dict[str, Any]) -> str:
-    """優先用該類別的 formatter；若結果形狀不符（真實 API/coder 產出的 JSON），退回 json.dumps。"""
     formatter = RESULT_FORMATTERS.get(route)
     if formatter:
         try:
@@ -107,9 +201,56 @@ def _render_result(route: str, result: dict[str, Any]) -> str:
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
-def final_response_node(state: AgentState):
-    sections: list[str] = []
+def _select_route(state: AgentState) -> str:
+    for route in (state.get("route"), state.get("current_task"), state.get("next_step")):
+        if route in RESULT_FORMATTERS:
+            return route
+    return ""
 
+
+def final_response_node(state: AgentState):
+    trip_request = state.get("trip_request", {})  # type: ignore[typeddict-item]
+    itinerary_result = state.get("itinerary_result", {})
+    booking_result = state.get("booking_result", {})
+    budget_result = state.get("budget_result", {})
+    critic_feedback = state.get("critic_feedback") or state.get("critic_result") or {}
+    has_itinerary_result = isinstance(itinerary_result, dict) and bool(itinerary_result)
+    has_booking_result = isinstance(booking_result, dict) and bool(booking_result)
+    has_budget_result = isinstance(budget_result, dict) and bool(budget_result)
+    has_critic_feedback = isinstance(critic_feedback, dict) and bool(critic_feedback)
+
+    if has_itinerary_result and (has_booking_result or has_budget_result):
+        sections = []
+        if isinstance(trip_request, dict) and trip_request:
+            sections.append(format_trip_request_summary(trip_request))
+        sections.append(format_itinerary_response(itinerary_result))
+        if has_booking_result:
+            sections.append(f"二、{format_booking_response(booking_result)}")
+        if has_budget_result:
+            sections.append(f"三、{format_budget_response(budget_result)}")
+        sections.append("四、總結建議\n請依天氣與現場狀況保留彈性，預算則以明細為基準控管。")
+        if has_critic_feedback:
+            sections.append(format_critic_feedback(critic_feedback))
+        final_answer = "\n\n".join(sections)
+        return {
+            "final_answer": final_answer,
+            "messages": [AIMessage(content=final_answer)],
+        }
+
+    if has_booking_result and has_budget_result:
+        sections = []
+        if isinstance(trip_request, dict) and trip_request:
+            sections.append(format_trip_request_summary(trip_request))
+        sections.extend([format_booking_response(booking_result), format_budget_response(budget_result)])
+        if has_critic_feedback:
+            sections.append(format_critic_feedback(critic_feedback))
+        final_answer = "\n\n".join(sections)
+        return {
+            "final_answer": final_answer,
+            "messages": [AIMessage(content=final_answer)],
+        }
+
+    sections: list[str] = []
     tier = state.get("budget_tier")
     if tier:
         sections.append(f"● 預算階層：{tier}")
@@ -122,7 +263,21 @@ def final_response_node(state: AgentState):
     if sections:
         final_answer = "為您整理本次旅遊規劃結果如下：\n\n" + "\n\n".join(sections)
     else:
-        final_answer = FALLBACK_ANSWER
+        route = _select_route(state)
+        result_key = RESULT_KEYS.get(route, "")
+        result = state.get(result_key, {}) if result_key else {}
+        if route and isinstance(result, dict) and result:
+            final_answer = RESULT_FORMATTERS[route](result)
+        else:
+            final_answer = FALLBACK_ANSWER
+
+    if isinstance(trip_request, dict) and trip_request and final_answer != FALLBACK_ANSWER:
+        final_answer = f"{format_trip_request_summary(trip_request)}\n\n{final_answer}"
+    if has_critic_feedback:
+        if final_answer == FALLBACK_ANSWER:
+            final_answer = format_critic_feedback(critic_feedback)
+        else:
+            final_answer = f"{final_answer}\n\n{format_critic_feedback(critic_feedback)}"
 
     return {
         "final_answer": final_answer,

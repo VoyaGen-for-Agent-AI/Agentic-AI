@@ -73,7 +73,7 @@ def build_stage_subgraph(worker_node: Callable):
     graph.add_conditional_edges(
         "worker",
         lambda s: s.get("next_step", "coder"),
-        {"coder": "coder", "FINISH": END},
+        {"coder": "coder", "final_response": END, "FINISH": END},
     )
     # coder 成功 -> e2b_sandbox；coder 失敗 -> 結束
     graph.add_conditional_edges(

@@ -1,93 +1,104 @@
 import sys
 from pathlib import Path
 
-from langchain_core.messages import AIMessage, HumanMessage
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from agents.workers.critic_worker import critic_node
 
 
-def make_state(error_traceback: str = "", sandbox_stderr: str = ""):
-    return {
-        "messages": [HumanMessage(content="critic input")],
+def make_state(**overrides):
+    state = {
+        "messages": [],
         "user_query": "critic input",
-        "route": "weather",
-        "current_task": "weather",
+        "route": "travel",
+        "current_task": "travel",
         "next_step": "critic",
+        "trip_request": {},
         "weather_result": {},
         "movie_result": {},
         "travel_result": {},
+        "itinerary_result": {},
         "booking_result": {},
-        "financial_result": {},
+        "budget_result": {},
+        "budget_allocation": {},
+        "transport_result": {},
         "scheduler_result": {},
         "safety_result": {},
-        "generated_code": "print('{}')",
+        "traffic_result": {},
+        "generated_code": "",
         "sandbox_stdout": "",
-        "sandbox_stderr": sandbox_stderr,
-        "error_traceback": error_traceback,
+        "sandbox_stderr": "",
+        "error_traceback": "",
         "critic_result": None,
-        "execution_status": "error",
+        "critic_feedback": None,
+        "execution_status": "success",
         "retry_count": 0,
         "final_answer": "",
     }
+    state.update(overrides)
+    return state
 
 
-def assert_critic_result(result, expected_error_type: str):
-    assert "critic_result" in result
-    assert result["critic_result"]["error_type"] == expected_error_type
-    assert result["critic_result"]["diagnosis"]
-    assert result["critic_result"]["suggestion"]
-    assert len(result["messages"]) == 1
-    assert isinstance(result["messages"][0], AIMessage)
-    assert expected_error_type in result["messages"][0].content
+def assert_feedback(result, expected_error_type, expected_should_retry):
+    assert result["critic_feedback"]["error_type"] == expected_error_type
+    assert result["critic_feedback"]["should_retry"] is expected_should_retry
+    assert result["critic_feedback"]["reason"]
+    assert result["critic_feedback"]["fix_strategy"]
+    assert result["critic_feedback"]["fallback_strategy"]
+    assert result["critic_result"] == result["critic_feedback"]
+    assert result["next_step"] == "final_response"
 
 
-def test_critic_classifies_module_not_found_error():
+def test_critic_invalid_json():
     result = critic_node(
-        make_state(error_traceback="ModuleNotFoundError: No module named 'requests'")
+        make_state(
+            execution_status="error",
+            error_traceback="Invalid itinerary JSON",
+        )
     )
 
-    assert_critic_result(result, "ModuleNotFoundError")
+    assert_feedback(result, "invalid_json", True)
 
 
-def test_critic_classifies_syntax_error():
-    result = critic_node(make_state(error_traceback="SyntaxError: invalid syntax"))
+def test_critic_empty_result():
+    result = critic_node(make_state(execution_status="empty_result"))
 
-    assert_critic_result(result, "SyntaxError")
-
-
-def test_critic_classifies_name_error():
-    result = critic_node(make_state(sandbox_stderr="NameError: name 'city' is not defined"))
-
-    assert_critic_result(result, "NameError")
+    assert_feedback(result, "empty_result", False)
 
 
-def test_critic_classifies_timeout_error():
-    result = critic_node(make_state(error_traceback="TimeoutError: execution timed out"))
+def test_critic_rate_limit():
+    result = critic_node(
+        make_state(
+            execution_status="error",
+            error_traceback="429 rate-limited by provider",
+        )
+    )
 
-    assert_critic_result(result, "TimeoutError")
-
-
-def test_critic_classifies_timeout_text():
-    result = critic_node(make_state(sandbox_stderr="sandbox timeout after 30 seconds"))
-
-    assert_critic_result(result, "TimeoutError")
-
-
-def test_critic_classifies_json_decode_error():
-    result = critic_node(make_state(error_traceback="JSONDecodeError: invalid JSON"))
-
-    assert_critic_result(result, "JSONDecodeError")
+    assert_feedback(result, "rate_limit", True)
 
 
-def test_critic_classifies_unknown_error():
-    result = critic_node(make_state(error_traceback="ValueError: unexpected result"))
+def test_critic_api_error():
+    result = critic_node(
+        make_state(
+            execution_status="error",
+            error_traceback="502 provider error from upstream API",
+        )
+    )
 
-    assert_critic_result(result, "unknown")
+    assert result["critic_feedback"]["error_type"] == "api_error"
 
 
-def test_critic_returns_none_when_no_error():
+def test_critic_over_budget():
+    result = critic_node(
+        make_state(
+            budget_result={"status": "over_budget"},
+        )
+    )
+
+    assert_feedback(result, "over_budget", False)
+
+
+def test_critic_unknown_error():
     result = critic_node(make_state())
 
-    assert_critic_result(result, "none")
+    assert_feedback(result, "unknown_error", False)

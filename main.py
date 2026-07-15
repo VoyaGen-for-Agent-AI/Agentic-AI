@@ -1,42 +1,134 @@
+import json
 import os
+import re
+
+from dotenv import load_dotenv
 from fastapi import FastAPI
-from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage
-from langfuse.langchain import CallbackHandler
-from core.state import AgentState
-from agents.supervisor import supervisor_node, route_next
-from agents.stage_graph import make_stage_node
+from langgraph.graph import END, StateGraph
+
 from agents.final_response import final_response_node
-from agents.workers.weather_worker import weather_node
-from agents.workers.travel_worker import travel_node
+from agents.stage_graph import make_stage_node
+from agents.supervisor import route_next, supervisor_node as stage_supervisor_node
 from agents.workers.booking_worker import booking_node
 from agents.workers.budget_worker import budget_node
-from agents.workers.traffic_worker import traffic_node
 from agents.workers.schedule_worker import schedule_node
-from dotenv import load_dotenv
+from agents.workers.traffic_worker import traffic_node
+from agents.workers.travel_worker import travel_node
+from agents.workers.weather_worker import weather_node
+from core.observability import get_langfuse_callbacks
+from core.state import AgentState
 
-load_dotenv()  # 這行會自動把 .env 裡的金鑰載入系統中
-if not os.getenv("OPENAI_API_KEY"):
-    print("警告：找不到 OPENAI_API_KEY！")
+
+load_dotenv()
+if not (os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")):
+    print("警告：找不到 OPENROUTER_API_KEY 或 OPENAI_API_KEY！")
+
 app = FastAPI()
 
-# Langfuse Callback Handler（v4 從環境變數讀取 LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_HOST）
-langfuse_handler = CallbackHandler()
+
+VALID_ROUTES = {
+    "weather",
+    "travel",
+    "booking",
+    "budget",
+    "scheduler",
+    "traffic",
+    "safety",
+    "final_response",
+    "FINISH",
+}
+
+ROUTE_ALIASES = {
+    "itinerary": "travel",
+    "trip": "travel",
+    "trip_planning": "travel",
+    "hotel": "booking",
+    "accommodation": "booking",
+    "lodging": "booking",
+    "finance": "budget",
+    "cost": "budget",
+    "expense": "budget",
+}
+
+# Backward-compatible hook for tests/manual experiments that monkeypatch a supervisor chain.
+supervisor_chain = None
+
+
+def normalize_route(raw_output) -> str:
+    if hasattr(raw_output, "content"):
+        return normalize_route(raw_output.content)
+
+    if isinstance(raw_output, dict):
+        raw_route = raw_output.get("next") or raw_output.get("route") or raw_output.get("next_step")
+        return normalize_route(raw_route)
+
+    for attr in ("next", "route", "next_step"):
+        if hasattr(raw_output, attr):
+            return normalize_route(getattr(raw_output, attr))
+
+    if raw_output is None:
+        return "travel"
+
+    raw_text = str(raw_output).strip()
+    if not raw_text:
+        return "travel"
+
+    try:
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError:
+        parsed = None
+    if parsed is not None:
+        return normalize_route(parsed)
+
+    input_value_match = re.search(r"input_value=['\"]([^'\"]+)['\"]", raw_text)
+    if input_value_match:
+        return normalize_route(input_value_match.group(1))
+
+    normalized_text = raw_text.strip().strip('"').strip("'")
+    if normalized_text in VALID_ROUTES:
+        return normalized_text
+
+    alias_key = normalized_text.lower().replace("-", "_").replace(" ", "_")
+    return ROUTE_ALIASES.get(alias_key, "travel")
+
+
+def supervisor_node(state: AgentState):
+    """Compatibility route parser node; parent graph uses stage_supervisor_node."""
+    messages = state.get("messages", [])
+    user_input = messages[-1].content if messages else state.get("user_query", "")
+    try:
+        if supervisor_chain is None:
+            normalized_route = normalize_route(state.get("next_step") or state.get("route"))
+        else:
+            result = supervisor_chain.invoke({"input": user_input})
+            normalized_route = normalize_route(result)
+        return {
+            "route": normalized_route,
+            "next_step": normalized_route,
+            "current_task": "supervisor",
+        }
+    except Exception as error:
+        normalized_route = normalize_route(error)
+        return {
+            "route": normalized_route,
+            "next_step": normalized_route,
+            "current_task": "supervisor",
+            "execution_status": "fallback",
+            "error_traceback": str(error),
+        }
+
 
 # ---------------------------------------------------------------------------
 # 構建 Graph 狀態機
 #
 # supervisor 是確定性的編排 hub；每個 stage 都是一張獨立子圖
-# (worker → coder → e2b_sandbox → parser)，由 make_stage_node 包裝後只把該 stage
+# (worker -> coder -> e2b_sandbox -> parser)，由 make_stage_node 包裝後只把該 stage
 # 的 result 冒泡回父圖。因此 travel / booking 可以平行執行而不會互相覆蓋狀態。
-#
-# 流程：supervisor → budget → supervisor → weather → supervisor
-#       → [travel ∥ booking] → supervisor → traffic → supervisor
-#       → scheduler → supervisor → final_response → END
 # ---------------------------------------------------------------------------
 workflow = StateGraph(AgentState)
 
-workflow.add_node("supervisor", supervisor_node)
+workflow.add_node("supervisor", stage_supervisor_node)
 workflow.add_node("budget", make_stage_node(budget_node, "budget_result", "budget"))
 workflow.add_node("weather", make_stage_node(weather_node, "weather_result", "weather"))
 workflow.add_node("travel", make_stage_node(travel_node, "travel_result", "travel"))
@@ -45,10 +137,8 @@ workflow.add_node("traffic", make_stage_node(traffic_node, "traffic_result", "tr
 workflow.add_node("scheduler", make_stage_node(schedule_node, "scheduler_result", "scheduler"))
 workflow.add_node("final_response", final_response_node)
 
-# 進入點：supervisor
 workflow.set_entry_point("supervisor")
 
-# supervisor 依「已完成的 stage」決定下一步（route_next 回傳 list 代表平行 fan-out）
 workflow.add_conditional_edges(
     "supervisor",
     route_next,
@@ -63,39 +153,30 @@ workflow.add_conditional_edges(
     },
 )
 
-# 每個 stage 完成後都回到 supervisor，由 supervisor 決定下一棒
 for stage in ("budget", "weather", "travel", "booking", "traffic", "scheduler"):
     workflow.add_edge(stage, "supervisor")
 
 workflow.add_edge("final_response", END)
 
-# 編譯成可執行的應用程式
 app_graph = workflow.compile()
 
 
-# 建立一個測試用的 API 端點
 @app.get("/chat/{query}")
 def chat_test(query: str):
-    # 將 handler 透過 config 傳入 invoke，確保整個 Graph 執行過程都被 Langfuse 記錄
-    config = {"callbacks": [langfuse_handler]}
-
-    # 將使用者的問題包裝成 HumanMessage 送進去跑
+    config = {"callbacks": get_langfuse_callbacks()}
     result = app_graph.invoke({"messages": [HumanMessage(content=query)]}, config)  # type: ignore
 
-    # 依 stage_logs 組出每一段的執行明細，並帶上該段實際寫回的結構化結果，
-    # 方便不進 Langfuse 也能快速看出哪一段成功、哪一段失敗
     stages = []
     for log in result.get("stage_logs", []):
         result_key = log.get("result_key", "")
         stages.append({
             "stage": log.get("stage", ""),
-            "status": log.get("status", ""),          # success / error / timeout
+            "status": log.get("status", ""),
             "has_result": log.get("has_result", False),
-            "code_chars": log.get("code_chars", 0),    # coder 產出的程式碼字數
+            "code_chars": log.get("code_chars", 0),
             "result": result.get(result_key, {}) if result_key else {},
         })
 
-    # 回傳 supervisor 彙整後的最終回覆 + 每段明細
     return {
         "response": result["messages"][-1].content,
         "budget_tier": result.get("budget_tier", ""),

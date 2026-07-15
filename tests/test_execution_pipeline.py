@@ -103,5 +103,6 @@ def test_execution_pipeline_error_goes_to_critic(monkeypatch):
 
     apply_update(state, critic_node(state))
 
-    assert state["critic_result"]["error_type"] == "NameError"
-    assert "NameError" in state["messages"][-1].content
+    assert state["critic_feedback"]["error_type"] == "runtime_error"
+    assert state["critic_result"] == state["critic_feedback"]
+    assert "runtime_error" in state["messages"][-1].content
