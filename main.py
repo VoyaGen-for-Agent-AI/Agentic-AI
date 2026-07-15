@@ -1,4 +1,6 @@
+import json
 import os
+import re
 from fastapi import FastAPI
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
@@ -33,12 +35,9 @@ app = FastAPI()
 
 # 1. 初始化 LLM 與大腦邏輯
 llm = ChatOpenAI(
-    base_url="https://openrouter.ai/api/v1",  #把請求導向 OpenRouter
-    #model="google/gemma-4-26b-a4b-it:free",
-    model="liquid/lfm-2.5-1.2b-thinking:free",
-    #model="meta-llama/llama-3.3-70b-instruct:free",
-    #model="openai/gpt-oss-20b:free",
-    api_key=os.getenv("OPENAI_API_KEY")# type: ignore
+    base_url=os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
+    model=os.getenv("LLM_MODEL", "openrouter/free"),
+    api_key=os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"),  # type: ignore
 )
 ##############付費#################
 # llm = ChatOpenAI(
@@ -56,14 +55,91 @@ llm = ChatOpenAI(
 ################################# 
 supervisor_chain = create_supervisor_node(llm)
 
+VALID_ROUTES = {
+    "weather",
+    "travel",
+    "booking",
+    "budget",
+    "scheduler",
+    "traffic",
+    "safety",
+    "final_response",
+    "FINISH",
+}
+
+ROUTE_ALIASES = {
+    "itinerary": "travel",
+    "trip": "travel",
+    "trip_planning": "travel",
+    "hotel": "booking",
+    "accommodation": "booking",
+    "lodging": "booking",
+    "finance": "budget",
+    "cost": "budget",
+    "expense": "budget",
+}
+
+
+def normalize_route(raw_output) -> str:
+    if hasattr(raw_output, "content"):
+        return normalize_route(raw_output.content)
+
+    if isinstance(raw_output, dict):
+        raw_route = raw_output.get("next") or raw_output.get("route") or raw_output.get("next_step")
+        return normalize_route(raw_route)
+
+    for attr in ("next", "route", "next_step"):
+        if hasattr(raw_output, attr):
+            return normalize_route(getattr(raw_output, attr))
+
+    if raw_output is None:
+        return "travel"
+
+    raw_text = str(raw_output).strip()
+    if not raw_text:
+        return "travel"
+
+    try:
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError:
+        parsed = None
+    if parsed is not None:
+        return normalize_route(parsed)
+
+    input_value_match = re.search(r"input_value=['\"]([^'\"]+)['\"]", raw_text)
+    if input_value_match:
+        return normalize_route(input_value_match.group(1))
+
+    normalized_text = raw_text.strip().strip('"').strip("'")
+    if normalized_text in VALID_ROUTES:
+        return normalized_text
+
+    alias_key = normalized_text.lower().replace("-", "_").replace(" ", "_")
+    return ROUTE_ALIASES.get(alias_key, "travel")
+
+
 # 定義一個外層函式來處理狀態流轉
 def supervisor_node(state: AgentState):
     # 取出對話紀錄中的最後一句話（也就是使用者剛輸入的話）
     user_input = state["messages"][-1].content
-    # 呼叫大腦進行判斷
-    result = supervisor_chain.invoke({"input": user_input})
-    # 把判斷結果寫回 State 的 next_step 欄位
-    return {"next_step": result.next_step}# type: ignore
+    try:
+        # 呼叫大腦進行判斷
+        result = supervisor_chain.invoke({"input": user_input})
+        normalized_route = normalize_route(result)
+        return {
+            "route": normalized_route,
+            "next_step": normalized_route,
+            "current_task": "supervisor",
+        }
+    except Exception as error:
+        normalized_route = normalize_route(error)
+        return {
+            "route": normalized_route,
+            "next_step": normalized_route,
+            "current_task": "supervisor",
+            "execution_status": "fallback",
+            "error_traceback": str(error),
+        }
 
 # 2. 構建 Graph 狀態機
 workflow = StateGraph(AgentState)
@@ -98,6 +174,7 @@ workflow.add_conditional_edges(
         "scheduler": "scheduler",
         "safety": "safety",
         "traffic": "traffic",
+        "final_response": "final_response",
         "FINISH": END
     }
 )

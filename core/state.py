@@ -10,7 +10,7 @@ class AgentState(TypedDict):
     user_query: str
 
     # Supervisor 決定的任務路由
-    route: Literal["weather", "travel", "booking", "budget", "scheduler", "safety", "traffic", "multi", "unknown"]
+    route: Literal["weather", "travel", "booking", "budget", "scheduler", "safety", "traffic", "final_response", "multi", "unknown"]
 
     # 目前正在處理的任務描述
     current_task: str
@@ -61,7 +61,7 @@ class AgentState(TypedDict):
     critic_feedback: Optional[Dict[str, Any]]
 
     # 執行狀態
-    execution_status: Literal["success", "error", "timeout", "empty_result", "over_budget"]
+    execution_status: Literal["success", "error", "timeout", "empty_result", "over_budget", "fallback"]
 
     # 紀錄重試次數，避免無限迴圈
     retry_count: int
