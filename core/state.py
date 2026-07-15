@@ -43,6 +43,8 @@ class AgentState(TypedDict):
     party_size: int
     total_budget: int
     preference: str
+    hotel_preference: str
+    transport_preference: str
     needs_booking: bool
     needs_budget: bool
     preferred_areas: list[str]

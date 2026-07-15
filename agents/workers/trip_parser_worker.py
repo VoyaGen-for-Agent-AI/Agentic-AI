@@ -15,6 +15,8 @@ DEMO_DEFAULTS = {
     "party_size": 1,
     "total_budget": 6000,
     "preference": "不要太趕、戶外景點",
+    "hotel_preference": "交通方便",
+    "transport_preference": "大眾運輸",
     "needs_booking": True,
     "needs_budget": True,
     "preferred_areas": ["台中車站", "逢甲"],
@@ -37,7 +39,7 @@ def _extract_number(value: str) -> int:
 
 
 def _parse_dates(text: str) -> tuple[str, str]:
-    match = re.search(r"(\d{1,2}/\d{1,2})\s*[~-]\s*(\d{1,2}/\d{1,2})", text)
+    match = re.search(r"(\d{1,2}/\d{1,2})\s*(?:[~-]|到|至)\s*(\d{1,2}/\d{1,2})", text)
     if match:
         return match.group(1), match.group(2)
     return str(DEMO_DEFAULTS["start_date"]), str(DEMO_DEFAULTS["end_date"])
@@ -95,6 +97,24 @@ def _parse_preference(text: str) -> str:
     return "、".join(preferences) or str(DEMO_DEFAULTS["preference"])
 
 
+def _parse_hotel_preference(text: str) -> str:
+    if "交通方便" in text:
+        return "交通方便"
+    if "住宿" in text:
+        return str(DEMO_DEFAULTS["hotel_preference"])
+    return ""
+
+
+def _parse_transport_preference(text: str) -> str:
+    if "高鐵" in text:
+        return "高鐵"
+    if "台鐵" in text:
+        return "台鐵"
+    if "大眾運輸" in text or "公車" in text:
+        return "大眾運輸"
+    return str(DEMO_DEFAULTS["transport_preference"])
+
+
 def parse_trip_request(text: str) -> dict[str, Any]:
     start_date, end_date = _parse_dates(text)
     days, nights = _parse_days_nights(text)
@@ -111,6 +131,8 @@ def parse_trip_request(text: str) -> dict[str, Any]:
         "party_size": 1,
         "total_budget": _parse_budget(text),
         "preference": _parse_preference(text),
+        "hotel_preference": _parse_hotel_preference(text),
+        "transport_preference": _parse_transport_preference(text),
         "needs_booking": needs_booking or bool(DEMO_DEFAULTS["needs_booking"]),
         "needs_budget": True,
         "preferred_areas": list(DEMO_DEFAULTS["preferred_areas"]),

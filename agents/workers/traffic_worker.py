@@ -5,9 +5,64 @@ from core.state import AgentState
 from prompts.traffic_prompt import TRAFFIC_PROMPT
 import time
 
+def build_mock_traffic_result(state: AgentState) -> dict:
+    trip_request = state.get("trip_request", {})  # type: ignore[typeddict-item]
+    origin = state.get("departure_station") or state.get("origin") or (
+        trip_request.get("departure_station") if isinstance(trip_request, dict) else ""
+    ) or "台北車站"
+    destination = state.get("destination") or (
+        trip_request.get("destination") if isinstance(trip_request, dict) else ""
+    ) or "台中"
+    segments = [
+        {
+            "from": origin,
+            "to": "台中車站",
+            "mode": "台鐵/高鐵",
+            "duration_minutes": 90,
+            "estimated_cost": 700,
+            "note": "實際時間與票價請以訂票系統為準。",
+        },
+        {
+            "from": "台中車站",
+            "to": "市區景點",
+            "mode": "公車/步行",
+            "duration_minutes": 30,
+            "estimated_cost": 50,
+            "note": "市區景點集中，適合搭配步行。",
+        },
+    ]
+    return {
+        "origin": origin,
+        "destination": destination,
+        "segments": segments,
+        "total_transport_time_minutes": sum(segment["duration_minutes"] for segment in segments),
+        "total_transport_cost": sum(segment["estimated_cost"] for segment in segments),
+        "feasibility": "good",
+        "warning": "週末尖峰時段建議提早訂票。",
+    }
+
+
+def _using_mock_llm() -> bool:
+    return not str(getattr(ChatOpenAI, "__module__", "")).startswith("langchain_openai")
+
+
 def traffic_node(state: AgentState):
-    print("🚗  [Traffic Worker] 正在解析使用者交通規劃需求...")
-    time.sleep(5)
+    print("[Traffic Worker] 正在解析使用者交通規劃需求...")
+
+    if (
+        not _using_mock_llm()
+        and (
+            os.getenv("USE_LIVE_TRAFFIC") != "1"
+            or not (os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"))
+        )
+    ):
+        return {
+            "traffic_result": build_mock_traffic_result(state),
+            "execution_status": "fallback",
+            "error_traceback": "Live traffic disabled or API key not configured; using mock traffic.",
+            "current_task": "traffic",
+            "next_step": "travel",
+        }
 
     # 1. 初始化 Travel 專員的大腦
     # llm = ChatOpenAI(
@@ -22,7 +77,7 @@ def traffic_node(state: AgentState):
     llm = ChatOpenAI(
         base_url="https://openrouter.ai/api/v1",
         model="meta-llama/llama-3.3-70b-instruct",
-        api_key=os.getenv("OPENAI_API_KEY"), # type: ignore
+        api_key=os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"), # type: ignore
         extra_body={
             "provider": {
                 "order": ["DeepInfra"],
@@ -45,7 +100,7 @@ def traffic_node(state: AgentState):
     try:
         response = llm.invoke(messages)
 
-        print(f"📋  [Traffic Worker] 需求規格產生完成，準備交接給 Coder。")
+        print("[Traffic Worker] 需求規格產生完成，準備交接給 Coder。")
 
         # 4. 更新狀態機
         # 把這份規格書加進對話紀錄中，這樣 Coder 的 last_request 才能完美接到這句話
@@ -56,5 +111,11 @@ def traffic_node(state: AgentState):
         }
 
     except Exception as e:
-        print(f"⚠️  [Traffic Worker] 發生錯誤: {e}")
-        return {"next_step": "FINISH"}
+        print(f"[Traffic Worker] 發生錯誤，改用 mock traffic: {e}")
+        return {
+            "traffic_result": build_mock_traffic_result(state),
+            "execution_status": "fallback",
+            "error_traceback": str(e),
+            "current_task": "traffic",
+            "next_step": "travel",
+        }

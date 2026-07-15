@@ -30,10 +30,15 @@ def allocate_budget(total_budget: int, days: int, nights: int, preference: str =
 
 
 def _state_value(state: AgentState, *keys: str, default: Any = None) -> Any:
+    trip_request = state.get("trip_request", {})  # type: ignore[typeddict-item]
     for key in keys:
         value = state.get(key)  # type: ignore[arg-type]
         if value not in (None, "", []):
             return value
+        if isinstance(trip_request, dict):
+            value = trip_request.get(key)
+            if value not in (None, "", []):
+                return value
     return default
 
 
@@ -194,6 +199,7 @@ def budget_node(state: AgentState) -> dict[str, Any]:
 
     budget_result = {
         "total_budget": total_budget,
+        "budget_limit": total_budget,
         "total_estimated_cost": cost_result["total_estimated_cost"],
         "remaining_budget": evaluation["remaining_budget"],
         "over_budget_amount": evaluation["over_budget_amount"],

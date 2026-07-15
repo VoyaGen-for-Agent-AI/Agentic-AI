@@ -7,10 +7,15 @@ from agents.workers.budget_worker import allocate_budget
 
 
 def _state_value(state: AgentState, *keys: str, default: Any = None) -> Any:
+    trip_request = state.get("trip_request", {})  # type: ignore[typeddict-item]
     for key in keys:
         value = state.get(key)  # type: ignore[arg-type]
         if value not in (None, "", []):
             return value
+        if isinstance(trip_request, dict):
+            value = trip_request.get(key)
+            if value not in (None, "", []):
+                return value
     return default
 
 

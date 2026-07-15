@@ -6,7 +6,7 @@ from prompts.schedule_prompt import SCHEDULE_PROMPT
 import time
 
 def schedule_node(state: AgentState):
-    print("🗓️  [Schedule Worker] 正在彙整景點與交通資訊，規劃時間軸...")
+    print("[Schedule Worker] 正在彙整景點與交通資訊，規劃時間軸...")
     time.sleep(5)
 
     # 1. 初始化 Schedule 專員的大腦
@@ -55,7 +55,7 @@ def schedule_node(state: AgentState):
     try:
         response = llm.invoke(messages)
 
-        print(f"📋  [Schedule Worker] 需求規格產生完成，準備交接給 Coder。")
+        print("[Schedule Worker] 需求規格產生完成，準備交接給 Coder。")
 
         # 4. 更新狀態機
         # 把這份規格書加進對話紀錄中，這樣 Coder 的 last_request 才能完美接到這句話
@@ -66,5 +66,5 @@ def schedule_node(state: AgentState):
         }
 
     except Exception as e:
-        print(f"⚠️  [Schedule Worker] 發生錯誤: {e}")
+        print(f"[Schedule Worker] 發生錯誤: {e}")
         return {"next_step": "FINISH"}

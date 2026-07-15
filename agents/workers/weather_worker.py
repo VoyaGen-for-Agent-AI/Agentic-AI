@@ -5,9 +5,43 @@ from core.state import AgentState
 from prompts.weather_prompt import WEATHER_SYSTEM_PROMPT
 import time
 
+def build_mock_weather_result(state: AgentState) -> dict:
+    trip_request = state.get("trip_request", {})  # type: ignore[typeddict-item]
+    destination = state.get("destination") or (
+        trip_request.get("destination") if isinstance(trip_request, dict) else ""
+    ) or "台中"
+    return {
+        "destination": destination,
+        "location": destination,
+        "condition": "多雲時晴",
+        "rain_probability": 30,
+        "temperature": "26-32°C",
+        "outdoor_risk": "low",
+        "recommendation": "適合安排戶外景點，但午後仍建議保留室內備案。",
+    }
+
+
+def _using_mock_llm() -> bool:
+    return not str(getattr(ChatOpenAI, "__module__", "")).startswith("langchain_openai")
+
+
 def weather_node(state: AgentState):
-    print("☁️  [Weather Worker] 正在解析使用者天氣需求...")
-    time.sleep(5)
+    print("[Weather Worker] 正在解析使用者天氣需求...")
+
+    if (
+        not _using_mock_llm()
+        and (
+            os.getenv("USE_LIVE_WEATHER") != "1"
+            or not (os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"))
+        )
+    ):
+        return {
+            "weather_result": build_mock_weather_result(state),
+            "execution_status": "fallback",
+            "error_traceback": "Live weather disabled or API key not configured; using mock weather.",
+            "current_task": "weather",
+            "next_step": "spot",
+        }
 
     # 1. 初始化 Weather 專員的大腦
     # llm = ChatOpenAI(
@@ -22,7 +56,7 @@ def weather_node(state: AgentState):
     llm = ChatOpenAI(
         base_url="https://openrouter.ai/api/v1",
         model="meta-llama/llama-3.1-8b-instruct",
-        api_key=os.getenv("OPENAI_API_KEY"), # type: ignore
+        api_key=os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"), # type: ignore
         extra_body={
             "provider": {
                 "order": ["DeepInfra","NovitaAI"],
@@ -45,7 +79,7 @@ def weather_node(state: AgentState):
     try:
         response = llm.invoke(messages)
         
-        print(f"📋  [Weather Worker] 需求規格產生完成，準備交接給 Coder。")
+        print("[Weather Worker] 需求規格產生完成，準備交接給 Coder。")
         
         # 4. 更新狀態機
         # 把這份規格書加進對話紀錄中，這樣 Coder 的 last_request 才能完美接到這句話
@@ -56,5 +90,11 @@ def weather_node(state: AgentState):
         }
 
     except Exception as e:
-        print(f"⚠️  [Weather Worker] 發生錯誤: {e}")
-        return {"next_step": "FINISH"}
+        print(f"[Weather Worker] 發生錯誤，改用 mock weather: {e}")
+        return {
+            "weather_result": build_mock_weather_result(state),
+            "execution_status": "fallback",
+            "error_traceback": str(e),
+            "current_task": "weather",
+            "next_step": "spot",
+        }

@@ -8,6 +8,16 @@ from core.state import AgentState
 
 
 def format_weather_response(result: dict[str, Any]) -> str:
+    if "outdoor_risk" in result:
+        return (
+            "天氣建議：\n"
+            f"目的地：{result.get('destination') or result.get('location', '未指定')}\n"
+            f"天氣：{result.get('condition', '')}\n"
+            f"降雨機率：{result.get('rain_probability', '')}%\n"
+            f"氣溫：{result.get('temperature', '')}\n"
+            f"戶外風險：{result.get('outdoor_risk', '')}\n"
+            f"建議：{result.get('recommendation', '')}"
+        )
     return (
         f"{result['location']} 天氣為 {result['condition']}，"
         f"降雨機率 {result['rain_probability']}%，氣溫 {result['temperature']} 度。"
@@ -46,6 +56,39 @@ def format_itinerary_response(result: dict[str, Any]) -> str:
     if result.get("planning_reason"):
         lines.append(f"規劃理由：{result['planning_reason']}")
 
+    return "\n".join(lines)
+
+
+def format_spot_response(result: dict[str, Any]) -> str:
+    lines = ["景點推薦："]
+    for spot in result.get("spots", [])[:5]:
+        lines.append(
+            f"- {spot.get('name', '')}（{spot.get('type', '')}）："
+            f"費用約 {spot.get('estimated_cost', 0)} 元，"
+            f"建議停留 {spot.get('duration_minutes', spot.get('estimated_stay_minutes', ''))} 分鐘。"
+            f"推薦原因：{spot.get('reason', '')}"
+        )
+    if result.get("recommendation"):
+        lines.append(f"整體建議：{result['recommendation']}")
+    if result.get("ticket_cost_total") is not None:
+        lines.append(f"活動 / 門票合計：約 {result['ticket_cost_total']} 元")
+    return "\n".join(lines)
+
+
+def format_traffic_response(result: dict[str, Any]) -> str:
+    lines = ["交通摘要："]
+    for segment in result.get("segments", []):
+        lines.append(
+            f"- {segment.get('from', '')} → {segment.get('to', '')}："
+            f"{segment.get('mode', '')}，約 {segment.get('duration_minutes', 0)} 分鐘，"
+            f"約 {segment.get('estimated_cost', 0)} 元。{segment.get('note', '')}"
+        )
+    lines.append(f"總交通時間：約 {result.get('total_transport_time_minutes', 0)} 分鐘")
+    lines.append(f"總交通費：約 {result.get('total_transport_cost', 0)} 元")
+    if result.get("feasibility"):
+        lines.append(f"可行性：{result['feasibility']}")
+    if result.get("warning"):
+        lines.append(f"提醒：{result['warning']}")
     return "\n".join(lines)
 
 
@@ -154,6 +197,8 @@ RESULT_FORMATTERS: dict[str, Callable[[dict[str, Any]], str]] = {
     "itinerary": format_itinerary_response,
     "booking": format_booking_response,
     "budget": format_budget_response,
+    "spot": format_spot_response,
+    "traffic": format_traffic_response,
     "scheduler": format_scheduler_response,
     "safety": format_safety_response,
 }
@@ -164,6 +209,8 @@ RESULT_KEYS = {
     "itinerary": "itinerary_result",
     "booking": "booking_result",
     "budget": "budget_result",
+    "spot": "spot_result",
+    "traffic": "traffic_result",
     "scheduler": "scheduler_result",
     "safety": "safety_result",
 }
@@ -211,13 +258,47 @@ def _select_route(state: AgentState) -> str:
 def final_response_node(state: AgentState):
     trip_request = state.get("trip_request", {})  # type: ignore[typeddict-item]
     itinerary_result = state.get("itinerary_result", {})
+    weather_result = state.get("weather_result", {})
+    spot_result = state.get("spot_result", {})
+    traffic_result = state.get("traffic_result", {})
     booking_result = state.get("booking_result", {})
     budget_result = state.get("budget_result", {})
     critic_feedback = state.get("critic_feedback") or state.get("critic_result") or {}
     has_itinerary_result = isinstance(itinerary_result, dict) and bool(itinerary_result)
+    has_weather_result = isinstance(weather_result, dict) and bool(weather_result)
+    has_spot_result = isinstance(spot_result, dict) and bool(spot_result)
+    has_traffic_result = isinstance(traffic_result, dict) and bool(traffic_result)
     has_booking_result = isinstance(booking_result, dict) and bool(booking_result)
     has_budget_result = isinstance(budget_result, dict) and bool(budget_result)
     has_critic_feedback = isinstance(critic_feedback, dict) and bool(critic_feedback)
+
+    if has_weather_result or has_spot_result or has_traffic_result:
+        sections = []
+        if isinstance(trip_request, dict) and trip_request:
+            sections.append(format_trip_request_summary(trip_request))
+        if has_weather_result:
+            sections.append(format_weather_response(weather_result))
+        if has_spot_result:
+            sections.append(format_spot_response(spot_result))
+        if has_traffic_result:
+            sections.append(format_traffic_response(traffic_result))
+        if has_itinerary_result:
+            sections.append(format_itinerary_response(itinerary_result))
+        if has_booking_result:
+            booking_text = format_booking_response(booking_result)
+            if not booking_text.startswith("住宿建議"):
+                booking_text = f"住宿建議：\n{booking_text}"
+            sections.append(booking_text)
+        if has_budget_result:
+            sections.append(format_budget_response(budget_result))
+        sections.append("總結建議：\n本行程以交通方便、戶外景點與不要太趕為原則；實際出發前請再次確認天氣、交通與票價。")
+        if has_critic_feedback:
+            sections.append(format_critic_feedback(critic_feedback))
+        final_answer = "\n\n".join(sections)
+        return {
+            "final_answer": final_answer,
+            "messages": [AIMessage(content=final_answer)],
+        }
 
     if has_itinerary_result and (has_booking_result or has_budget_result):
         sections = []
