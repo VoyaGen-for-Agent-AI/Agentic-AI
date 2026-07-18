@@ -125,6 +125,8 @@ def booking_node(state: AgentState) -> dict[str, Any]:
             "booking_result": {
                 "hotels": [],
                 "recommended_hotel": None,
+                "source": "mock_hotel_data",
+                "source_detail": "Ranked from predefined mock hotel dataset using rule-based scoring.",
             },
             "execution_status": "empty_result",
             "error_traceback": "No hotel candidates found",
@@ -157,6 +159,8 @@ def booking_node(state: AgentState) -> dict[str, Any]:
         "booking_result": {
             "hotels": candidates,
             "recommended_hotel": recommended_hotel,
+            "source": "mock_hotel_data",
+            "source_detail": "Ranked from predefined mock hotel dataset using rule-based scoring.",
         },
         "budget_allocation": budget_allocation,
         "current_task": "booking",

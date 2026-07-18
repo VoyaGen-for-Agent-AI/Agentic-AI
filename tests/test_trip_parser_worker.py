@@ -78,6 +78,33 @@ def test_parse_days_nights_variants():
     assert parse_trip_request("2天1夜")["nights"] == 1
 
 
+def test_parse_origin_departure_station_variants():
+    cases = [
+        (
+            "從台北(台北車站出發)去台中",
+            {"origin": "台北", "departure_station": "台北車站", "destination": "台中"},
+        ),
+        (
+            "從台北車站出發去台中",
+            {"origin": "台北", "departure_station": "台北車站", "destination": "台中"},
+        ),
+        (
+            "台北車站出發，到台中",
+            {"origin": "台北", "departure_station": "台北車站", "destination": "台中"},
+        ),
+        (
+            "從新竹出發去台中",
+            {"origin": "新竹", "departure_station": "新竹", "destination": "台中"},
+        ),
+    ]
+
+    for query, expected in cases:
+        result = parse_trip_request(query)
+        assert result["origin"] == expected["origin"]
+        assert result["departure_station"] == expected["departure_station"]
+        assert result["destination"] == expected["destination"]
+
+
 def test_trip_parser_node_updates_state():
     result = trip_parser_node(make_state())
 

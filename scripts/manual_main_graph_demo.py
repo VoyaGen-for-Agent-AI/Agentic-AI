@@ -26,8 +26,11 @@ def main() -> int:
         "travel_result",
         "budget_result",
     ):
+        result = state.get(key, {})
+        if isinstance(result, dict) and result.get("source"):
+            print(f"[{key}] source: {result['source']}")
         print(f"{key}:")
-        print(state.get(key, {}))
+        print(result)
         print()
 
     print("final_answer:")

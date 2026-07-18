@@ -18,6 +18,8 @@ def build_mock_weather_result(state: AgentState) -> dict:
         "temperature": "26-32°C",
         "outdoor_risk": "low",
         "recommendation": "適合安排戶外景點，但午後仍建議保留室內備案。",
+        "source": "mock_fallback",
+        "source_detail": "Weather API/LLM unavailable or disabled; using mock weather result.",
     }
 
 

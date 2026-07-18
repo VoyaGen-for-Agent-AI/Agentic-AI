@@ -39,6 +39,8 @@ def build_mock_traffic_result(state: AgentState) -> dict:
         "total_transport_cost": sum(segment["estimated_cost"] for segment in segments),
         "feasibility": "good",
         "warning": "週末尖峰時段建議提早訂票。",
+        "source": "mock_fallback",
+        "source_detail": "Traffic API/LLM unavailable or disabled; using mock traffic result.",
     }
 
 

@@ -121,6 +121,23 @@ def format_critic_feedback(result: dict[str, Any]) -> str:
     )
 
 
+def format_source_summary(state: AgentState) -> str:
+    source_map = [
+        ("需求解析", state.get("trip_request", {})),
+        ("天氣", state.get("weather_result", {})),
+        ("景點", state.get("spot_result", {})),
+        ("住宿", state.get("booking_result", {})),
+        ("交通", state.get("traffic_result", {})),
+        ("行程", state.get("itinerary_result", {}) or state.get("travel_result", {})),
+        ("預算", state.get("budget_result", {})),
+    ]
+    lines = ["資料來源摘要："]
+    for label, result in source_map:
+        if isinstance(result, dict) and result.get("source"):
+            lines.append(f"- {label}：{result['source']}")
+    return "\n".join(lines) if len(lines) > 1 else ""
+
+
 def format_booking_response(result: dict[str, Any]) -> str:
     recommended_hotel = result.get("recommended_hotel")
     if isinstance(recommended_hotel, dict):
@@ -294,6 +311,9 @@ def final_response_node(state: AgentState):
         sections.append("總結建議：\n本行程以交通方便、戶外景點與不要太趕為原則；實際出發前請再次確認天氣、交通與票價。")
         if has_critic_feedback:
             sections.append(format_critic_feedback(critic_feedback))
+        source_summary = format_source_summary(state)
+        if source_summary:
+            sections.append(source_summary)
         final_answer = "\n\n".join(sections)
         return {
             "final_answer": final_answer,
@@ -312,6 +332,9 @@ def final_response_node(state: AgentState):
         sections.append("四、總結建議\n請依天氣與現場狀況保留彈性，預算則以明細為基準控管。")
         if has_critic_feedback:
             sections.append(format_critic_feedback(critic_feedback))
+        source_summary = format_source_summary(state)
+        if source_summary:
+            sections.append(source_summary)
         final_answer = "\n\n".join(sections)
         return {
             "final_answer": final_answer,
@@ -325,6 +348,9 @@ def final_response_node(state: AgentState):
         sections.extend([format_booking_response(booking_result), format_budget_response(budget_result)])
         if has_critic_feedback:
             sections.append(format_critic_feedback(critic_feedback))
+        source_summary = format_source_summary(state)
+        if source_summary:
+            sections.append(source_summary)
         final_answer = "\n\n".join(sections)
         return {
             "final_answer": final_answer,
@@ -359,6 +385,9 @@ def final_response_node(state: AgentState):
             final_answer = format_critic_feedback(critic_feedback)
         else:
             final_answer = f"{final_answer}\n\n{format_critic_feedback(critic_feedback)}"
+    source_summary = format_source_summary(state)
+    if source_summary and final_answer != FALLBACK_ANSWER:
+        final_answer = f"{final_answer}\n\n{source_summary}"
 
     return {
         "final_answer": final_answer,

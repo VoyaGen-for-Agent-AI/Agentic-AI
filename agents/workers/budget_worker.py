@@ -208,6 +208,8 @@ def budget_node(state: AgentState) -> dict[str, Any]:
         "breakdown": cost_result["breakdown"],
         "suggestion": suggestion,
         "used_fallbacks": cost_result["used_fallbacks"],
+        "source": "rule_based",
+        "source_detail": "Calculated by deterministic budget rules.",
     }
 
     return {

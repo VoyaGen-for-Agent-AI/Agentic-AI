@@ -109,6 +109,8 @@ def build_mock_spot_result(state: AgentState) -> dict[str, Any]:
         "recommendation": "以戶外、步行可達、節奏輕鬆的景點為主。"
         if outdoor_risk != "high"
         else "天氣風險偏高，優先加入室內或半室內備案。",
+        "source": "mock_spot_data",
+        "source_detail": "Selected from predefined mock spot dataset.",
     }
 
 

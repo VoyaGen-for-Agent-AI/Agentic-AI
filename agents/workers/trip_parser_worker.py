@@ -62,21 +62,45 @@ def _parse_budget(text: str) -> int:
     return int(DEMO_DEFAULTS["total_budget"])
 
 
+def _origin_from_departure(value: str) -> str:
+    value = value.strip()
+    if value.endswith("車站"):
+        return value.removesuffix("車站")
+    return value
+
+
 def _parse_origin(text: str) -> str:
-    match = re.search(r"從([^()，,]+)", text)
+    match = re.search(r"從([^()（），,。]+)[(（][^()（）]*?車站出發?[)）]", text)
     if match:
-        origin = match.group(1).strip()
+        origin = _origin_from_departure(match.group(1))
         if origin:
             return origin
-    if "台北車站出發" in text:
-        return "台北"
+
+    for pattern in (
+        r"從([^()（），,。]+?車站)出發",
+        r"([^()（），,。]+?車站)出發[，,、]?\s*(?:到|去)",
+        r"從([^()（），,。]+?)出發[，,、]?\s*(?:到|去)",
+        r"從([^()（），,。]+?)(?:到|去)",
+    ):
+        match = re.search(pattern, text)
+        if match:
+            origin = _origin_from_departure(match.group(1))
+            if origin:
+                return origin
+
     return str(DEMO_DEFAULTS["origin"])
 
 
 def _parse_departure_station(text: str) -> str:
-    match = re.search(r"([^()，,]+車站)出發", text)
-    if match:
-        return match.group(1).strip()
+    for pattern in (
+        r"[(（]([^()（），,。]+?車站)出發?[)）]",
+        r"從([^()（），,。]+?車站)出發",
+        r"([^()（），,。]+?車站)出發",
+        r"從([^()（），,。]+?)出發[，,、]?\s*(?:到|去)",
+    ):
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1).strip()
     return str(DEMO_DEFAULTS["departure_station"])
 
 
@@ -136,6 +160,8 @@ def parse_trip_request(text: str) -> dict[str, Any]:
         "needs_booking": needs_booking or bool(DEMO_DEFAULTS["needs_booking"]),
         "needs_budget": True,
         "preferred_areas": list(DEMO_DEFAULTS["preferred_areas"]),
+        "source": "rule_based_parser",
+        "source_detail": "Parsed from user query using regex/rule-based parser.",
     }
 
 

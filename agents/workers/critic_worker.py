@@ -106,6 +106,8 @@ def _build_feedback(error_type: str) -> dict[str, Any]:
         "fix_strategy": detail["fix_strategy"],
         "should_retry": detail["should_retry"],
         "fallback_strategy": detail["fallback_strategy"],
+        "source": "rule_based_critic",
+        "source_detail": "Classified by rule-based critic logic.",
     }
 
 
