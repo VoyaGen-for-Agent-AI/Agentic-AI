@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -14,7 +15,17 @@ DEMO_PROMPT = "我想在 7/18 到 7/19 從台北車站出發去台中兩天一�
 
 
 def main() -> int:
+    if os.getenv("USE_LIVE_WEATHER", "").strip().lower() in {"1", "true", "yes", "on"}:
+        print("Weather live mode enabled")
+    if os.getenv("USE_LIVE_TRAFFIC", "").strip().lower() in {"1", "true", "yes", "on"}:
+        print("Traffic live mode enabled")
+
     state = app_graph.invoke({"messages": [HumanMessage(content=DEMO_PROMPT)]})
+
+    for key in ("weather_result", "traffic_result", "itinerary_result"):
+        result = state.get(key, {})
+        source = result.get("source", "unknown") if isinstance(result, dict) else "unknown"
+        print(f"{key} source: {source}")
 
     for key in (
         "trip_request",

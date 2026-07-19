@@ -1,102 +1,138 @@
+import json
 import os
+import re
+from typing import Any
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+
 from core.state import AgentState
 from prompts.weather_prompt import WEATHER_SYSTEM_PROMPT
-import time
 
-def build_mock_weather_result(state: AgentState) -> dict:
+
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+_REQUIRED_WEATHER_FIELDS = {
+    "destination",
+    "date_range",
+    "condition",
+    "rain_probability",
+    "temperature",
+    "outdoor_risk",
+    "recommendation",
+}
+
+
+def _state_value(state: AgentState, key: str, default: Any = "") -> Any:
+    value = state.get(key)  # type: ignore[arg-type]
+    if value not in (None, "", []):
+        return value
     trip_request = state.get("trip_request", {})  # type: ignore[typeddict-item]
-    destination = state.get("destination") or (
-        trip_request.get("destination") if isinstance(trip_request, dict) else ""
-    ) or "台中"
+    if isinstance(trip_request, dict):
+        return trip_request.get(key, default)
+    return default
+
+
+def _date_range(state: AgentState) -> str:
+    start_date = str(_state_value(state, "start_date", "")).strip()
+    end_date = str(_state_value(state, "end_date", "")).strip()
+    if start_date and end_date:
+        return f"{start_date} ~ {end_date}"
+    return start_date or end_date or "日期未指定"
+
+
+def build_mock_weather_result(state: AgentState) -> dict[str, Any]:
+    destination = str(_state_value(state, "destination", "台中") or "台中")
     return {
         "destination": destination,
         "location": destination,
+        "date_range": _date_range(state),
         "condition": "多雲時晴",
         "rain_probability": 30,
         "temperature": "26-32°C",
         "outdoor_risk": "low",
-        "recommendation": "適合安排戶外景點，但午後仍建議保留室內備案。",
+        "recommendation": "此為行程規劃估計；適合安排戶外景點，但午後仍建議保留室內備案。",
         "source": "mock_fallback",
-        "source_detail": "Weather API/LLM unavailable or disabled; using mock weather result.",
+        "source_detail": "Live weather generation unavailable or failed; using mock weather result.",
     }
+
+
+def _env_enabled(name: str) -> bool:
+    return str(os.getenv(name, "")).strip().lower() in _TRUE_VALUES
 
 
 def _using_mock_llm() -> bool:
     return not str(getattr(ChatOpenAI, "__module__", "")).startswith("langchain_openai")
 
 
-def weather_node(state: AgentState):
-    print("[Weather Worker] 正在解析使用者天氣需求...")
+def _extract_json(content: str) -> str:
+    match = re.search(r"```(?:json)?\s*(.*?)\s*```", content, re.DOTALL)
+    return match.group(1).strip() if match else content.strip()
 
-    if (
-        not _using_mock_llm()
-        and (
-            os.getenv("USE_LIVE_WEATHER") != "1"
-            or not (os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"))
-        )
-    ):
-        return {
-            "weather_result": build_mock_weather_result(state),
-            "execution_status": "fallback",
-            "error_traceback": "Live weather disabled or API key not configured; using mock weather.",
-            "current_task": "weather",
-            "next_step": "spot",
-        }
 
-    # 1. 初始化 Weather 專員的大腦
-    # llm = ChatOpenAI(
-    #     base_url="https://openrouter.ai/api/v1",
-    #     model="google/gemma-4-26b-a4b-it:free", 
-    #     #model="liquid/lfm-2.5-1.2b-thinking:free",
-    #     #model="meta-llama/llama-3.3-70b-instruct:free",
-    #     #model="openai/gpt-oss-20b:free",
-    #     api_key=os.getenv("OPENAI_API_KEY") # type: ignore
-    # )
-    ##############付費#################
-    llm = ChatOpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        model="meta-llama/llama-3.1-8b-instruct",
-        api_key=os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"), # type: ignore
-        extra_body={
-            "provider": {
-                "order": ["DeepInfra","NovitaAI"],
-                "ignore": ["Cloudflare","Groq"],
-                "allow_fallbacks": True
-            }
-        } 
-    )
-    #################################  
+def _fallback_update(state: AgentState, error: str) -> dict[str, Any]:
+    return {
+        "weather_result": build_mock_weather_result(state),
+        "execution_status": "fallback",
+        "error_traceback": error,
+        "current_task": "weather",
+        "next_step": "spot",
+    }
 
-    # 2. 抓取使用者的原始問題 (通常是最一開始的那句話)
-    user_input = state["messages"][0].content
 
-    # 3. 組裝訊息，讓 LLM 根據 prompt 萃取城市並生成規格
-    messages = [
-        SystemMessage(content=WEATHER_SYSTEM_PROMPT),
-        HumanMessage(content=f"使用者輸入：{user_input}")
-    ]
+def _validate_weather_result(result: Any) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        raise ValueError("weather_result must be a JSON object")
+    missing = sorted(_REQUIRED_WEATHER_FIELDS - result.keys())
+    if missing:
+        raise ValueError(f"weather_result missing required fields: {', '.join(missing)}")
+    if result["outdoor_risk"] not in {"low", "medium", "high"}:
+        raise ValueError("outdoor_risk must be low, medium, or high")
+    probability = int(result["rain_probability"])
+    if not 0 <= probability <= 100:
+        raise ValueError("rain_probability must be between 0 and 100")
+    result["rain_probability"] = probability
+    return result
 
+
+def weather_node(state: AgentState) -> dict[str, Any]:
+    print("[Weather Agent] 正在產生天氣規劃估計...")
+
+    if not _env_enabled("USE_LIVE_WEATHER"):
+        return _fallback_update(state, "Live weather disabled; using mock weather result.")
+    if not _using_mock_llm() and not (os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")):
+        return _fallback_update(state, "Live weather API key not configured; using mock weather result.")
+
+    context = {
+        "trip_request": state.get("trip_request", {}),
+        "destination": _state_value(state, "destination"),
+        "start_date": _state_value(state, "start_date"),
+        "end_date": _state_value(state, "end_date"),
+        "preference": _state_value(state, "preference"),
+    }
     try:
-        response = llm.invoke(messages)
-        
-        print("[Weather Worker] 需求規格產生完成，準備交接給 Coder。")
-        
-        # 4. 更新狀態機
-        # 把這份規格書加進對話紀錄中，這樣 Coder 的 last_request 才能完美接到這句話
-        return {
-            "messages": [response],
-            "current_task": "weather",
-            "next_step": "coder" # 指派下一步給 Coder Agent 去寫 Code
-        }
+        llm = ChatOpenAI(
+            base_url=os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
+            model=os.getenv("LLM_MODEL", "openai/gpt-4o-mini"),
+            api_key=os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"),  # type: ignore[arg-type]
+        )
+        response = llm.invoke([
+            SystemMessage(content=WEATHER_SYSTEM_PROMPT),
+            HumanMessage(content=json.dumps(context, ensure_ascii=False, default=str)),
+        ])
+        parsed = _validate_weather_result(json.loads(_extract_json(str(response.content))))
+    except Exception as exc:
+        return _fallback_update(state, str(exc))
 
-    except Exception as e:
-        print(f"[Weather Worker] 發生錯誤，改用 mock weather: {e}")
-        return {
-            "weather_result": build_mock_weather_result(state),
-            "execution_status": "fallback",
-            "error_traceback": str(e),
-            "current_task": "weather",
-            "next_step": "spot",
-        }
+    weather_result = {
+        **parsed,
+        "source": "llm",
+        "model": os.getenv("LLM_MODEL"),
+        "source_detail": "Generated by Weather Agent.",
+    }
+    return {
+        "weather_result": weather_result,
+        "execution_status": "success",
+        "error_traceback": "",
+        "current_task": "weather",
+        "next_step": "spot",
+    }
