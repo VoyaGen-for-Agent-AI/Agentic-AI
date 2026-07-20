@@ -40,6 +40,7 @@ def test_live_weather_success_uses_llm_source(monkeypatch):
             return SimpleNamespace(content=json.dumps(VALID_WEATHER, ensure_ascii=False))
 
     monkeypatch.setenv("USE_LIVE_WEATHER", "yes")
+    monkeypatch.setenv("WEATHER_PROVIDER", "llm")
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
@@ -62,6 +63,7 @@ def test_live_weather_invalid_json_falls_back(monkeypatch):
             return SimpleNamespace(content="invalid weather JSON")
 
     monkeypatch.setenv("USE_LIVE_WEATHER", "1")
+    monkeypatch.setenv("WEATHER_PROVIDER", "llm")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.setattr(weather_worker, "ChatOpenAI", FakeChatOpenAI)
@@ -85,6 +87,7 @@ def test_live_weather_missing_field_falls_back(monkeypatch):
             return SimpleNamespace(content=json.dumps({"destination": "台中"}, ensure_ascii=False))
 
     monkeypatch.setenv("USE_LIVE_WEATHER", "on")
+    monkeypatch.setenv("WEATHER_PROVIDER", "llm")
     monkeypatch.setattr(weather_worker, "ChatOpenAI", FakeChatOpenAI)
 
     result = weather_node(_state())

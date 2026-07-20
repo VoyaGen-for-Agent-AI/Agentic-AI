@@ -11,16 +11,27 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from main import app_graph
 
 
-DEMO_PROMPT = "我想在 7/18 到 7/19 從台北車站出發去台中兩天一夜，一人總預算 6000 元，希望行程不要太趕，想安排戶外景點，也請幫我找交通方便的住宿，最後估算整趟旅程的總花費。"
+DEMO_PROMPT = "我想 7/18 到 7/19 從台北車站去台中兩天一夜，預算 6000，想要不要太趕、戶外景點，也需要住宿和預算估算"
+
+
+def get_user_query(default_query: str) -> str:
+    user_input = input("請輸入旅遊需求，直接 Enter 使用預設範例：\n")
+    return user_input.strip() or default_query
 
 
 def main() -> int:
+    print(f"Weather provider: {os.getenv('WEATHER_PROVIDER', 'llm')}")
+    print(f"Traffic provider: {os.getenv('TRAFFIC_PROVIDER', 'llm')}")
     if os.getenv("USE_LIVE_WEATHER", "").strip().lower() in {"1", "true", "yes", "on"}:
         print("Weather live mode enabled")
     if os.getenv("USE_LIVE_TRAFFIC", "").strip().lower() in {"1", "true", "yes", "on"}:
         print("Traffic live mode enabled")
+    if os.getenv("USE_LIVE_ITINERARY", "").strip().lower() in {"1", "true", "yes", "on"}:
+        print("Itinerary live mode enabled")
 
-    state = app_graph.invoke({"messages": [HumanMessage(content=DEMO_PROMPT)]})
+    user_query = get_user_query(DEMO_PROMPT)
+    print(f"user_query: {user_query}")
+    state = app_graph.invoke({"messages": [HumanMessage(content=user_query)]})
 
     for key in ("weather_result", "traffic_result", "itinerary_result"):
         result = state.get(key, {})
@@ -46,6 +57,9 @@ def main() -> int:
 
     print("final_answer:")
     print(state.get("final_answer", ""))
+    if state.get("execution_status") == "fallback" and state.get("error_traceback"):
+        print("\nerror_traceback:")
+        print(state["error_traceback"])
     return 0
 
 

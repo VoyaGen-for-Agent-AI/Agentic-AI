@@ -71,6 +71,7 @@ def test_weather_agent_returns_structured_result_without_coder_or_sandbox(monkey
             }, ensure_ascii=False))
 
     monkeypatch.setenv("USE_LIVE_WEATHER", "1")
+    monkeypatch.setenv("WEATHER_PROVIDER", "llm")
     monkeypatch.setattr(weather_worker, "ChatOpenAI", FakeWeatherLLM)
 
     state = make_state(route="weather", next_step="weather")

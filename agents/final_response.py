@@ -1,4 +1,5 @@
 import json
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -9,7 +10,7 @@ from core.state import AgentState
 
 def format_weather_response(result: dict[str, Any]) -> str:
     if "outdoor_risk" in result:
-        return (
+        lines = [
             "天氣建議：\n"
             f"目的地：{result.get('destination') or result.get('location', '未指定')}\n"
             f"天氣：{result.get('condition', '')}\n"
@@ -17,7 +18,21 @@ def format_weather_response(result: dict[str, Any]) -> str:
             f"氣溫：{result.get('temperature', '')}\n"
             f"戶外風險：{result.get('outdoor_risk', '')}\n"
             f"建議：{result.get('recommendation', '')}"
-        )
+        ]
+        forecast_days = result.get("forecast_days", [])
+        if isinstance(forecast_days, list) and forecast_days:
+            lines.append("逐日預報：")
+            for day in forecast_days:
+                if not isinstance(day, dict):
+                    continue
+                lines.append(
+                    f"- {day.get('date', '')}：{day.get('condition', '')}，"
+                    f"降雨機率 {day.get('rain_probability', '')}%，"
+                    f"氣溫 {day.get('temperature', '')}，"
+                    f"戶外風險 {day.get('outdoor_risk', '')}。"
+                    f"{day.get('recommendation', '')}"
+                )
+        return "\n".join(lines)
     return (
         f"{result['location']} 天氣為 {result['condition']}，"
         f"降雨機率 {result['rain_probability']}%，氣溫 {result['temperature']} 度。"
@@ -78,10 +93,14 @@ def format_spot_response(result: dict[str, Any]) -> str:
 def format_traffic_response(result: dict[str, Any]) -> str:
     lines = ["交通摘要："]
     for segment in result.get("segments", []):
+        direction = {"outbound": "去程", "return": "回程"}.get(segment.get("direction"), "")
+        prefix = f"{direction}：" if direction else ""
+        note = str(segment.get("note", ""))
+        display_note = note if re.search(r"[\u4e00-\u9fff]", note) else ""
         lines.append(
-            f"- {segment.get('from', '')} → {segment.get('to', '')}："
+            f"- {prefix}{segment.get('from', '')} → {segment.get('to', '')}："
             f"{segment.get('mode', '')}，約 {segment.get('duration_minutes', 0)} 分鐘，"
-            f"約 {segment.get('estimated_cost', 0)} 元。{segment.get('note', '')}"
+            f"約 {segment.get('estimated_cost', 0)} 元。{display_note}"
         )
     lines.append(f"總交通時間：約 {result.get('total_transport_time_minutes', 0)} 分鐘")
     lines.append(f"總交通費：約 {result.get('total_transport_cost', 0)} 元")
@@ -89,6 +108,19 @@ def format_traffic_response(result: dict[str, Any]) -> str:
         lines.append(f"可行性：{result['feasibility']}")
     if result.get("warning"):
         lines.append(f"提醒：{result['warning']}")
+    references = result.get("references", [])
+    if isinstance(references, list) and references:
+        lines.append("參考來源：")
+        valid_references = [reference for reference in references if isinstance(reference, dict)]
+        valid_references.sort(
+            key=lambda reference: "threads.com" in str(reference.get("url", "")).lower()
+        )
+        for reference in valid_references[:2]:
+            if not isinstance(reference, dict):
+                continue
+            title = str(reference.get("title", "")).strip()
+            if title:
+                lines.append(f"- {title}")
     return "\n".join(lines)
 
 

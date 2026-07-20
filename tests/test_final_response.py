@@ -19,6 +19,7 @@ def make_state(route: str = "unknown", current_task: str = "", **results):
         "current_task": current_task,
         "next_step": next_step,
         "weather_result": results.get("weather_result", {}),
+        "traffic_result": results.get("traffic_result", {}),
         "travel_result": results.get("travel_result", {}),
         "booking_result": results.get("booking_result", {}),
         "budget_result": results.get("budget_result", {}),
@@ -257,3 +258,81 @@ def test_worker_routes_to_final_response_without_llm():
     assert result["weather_result"]["location"] == "Taipei"
     assert "final_answer" in result
     assert "降雨機率 80%" in result["final_answer"]
+
+
+def test_traffic_references_show_titles_only_and_deprioritize_threads():
+    result = final_response_node(
+        make_state(
+            route="traffic",
+            traffic_result={
+                "origin": "台北車站",
+                "destination": "台中",
+                "segments": [],
+                "total_transport_time_minutes": 60,
+                "total_transport_cost": 700,
+                "feasibility": "good",
+                "warning": "規劃估計",
+                "source": "tavily_search",
+                "references": [
+                    {
+                        "title": "Threads 網友分享",
+                        "url": "https://www.threads.com/very/long/reference/url",
+                    },
+                    {
+                        "title": "台灣高鐵官方資訊",
+                        "url": "https://www.thsrc.com.tw/very/long/reference/url",
+                    },
+                    {
+                        "title": "交通資訊整理",
+                        "url": "https://example.com/very/long/reference/url",
+                    },
+                ],
+            },
+        )
+    )
+
+    final_answer = result["final_answer"]
+    assert "台灣高鐵官方資訊" in final_answer
+    assert "交通資訊整理" in final_answer
+    assert "Threads 網友分享" not in final_answer
+    assert "https://" not in final_answer
+
+
+def test_final_response_displays_outbound_and_return_traffic():
+    result = final_response_node(
+        make_state(
+            route="traffic",
+            traffic_result={
+                "origin": "台北車站",
+                "destination": "台中",
+                "segments": [
+                    {
+                        "from": "台北車站",
+                        "to": "台中車站",
+                        "mode": "高鐵",
+                        "direction": "outbound",
+                        "duration_minutes": 50,
+                        "estimated_cost": 700,
+                        "note": "實際資訊請以官方公告為準。",
+                    },
+                    {
+                        "from": "台中車站",
+                        "to": "台北車站",
+                        "mode": "高鐵",
+                        "direction": "return",
+                        "duration_minutes": 50,
+                        "estimated_cost": 700,
+                        "note": "實際資訊請以官方公告為準。",
+                    },
+                ],
+                "total_transport_time_minutes": 100,
+                "total_transport_cost": 1400,
+                "feasibility": "good",
+                "warning": "規劃估計",
+                "source": "tavily_search",
+            },
+        )
+    )
+
+    assert "去程：台北車站 → 台中車站" in result["final_answer"]
+    assert "回程：台中車站 → 台北車站" in result["final_answer"]

@@ -59,6 +59,7 @@ def test_live_traffic_success_uses_llm_source(monkeypatch):
             return SimpleNamespace(content=json.dumps(VALID_TRAFFIC, ensure_ascii=False))
 
     monkeypatch.setenv("USE_LIVE_TRAFFIC", "true")
+    monkeypatch.setenv("TRAFFIC_PROVIDER", "llm")
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
@@ -83,6 +84,7 @@ def test_live_traffic_invalid_json_falls_back(monkeypatch):
             return SimpleNamespace(content="invalid traffic JSON")
 
     monkeypatch.setenv("USE_LIVE_TRAFFIC", "1")
+    monkeypatch.setenv("TRAFFIC_PROVIDER", "llm")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.setattr(traffic_worker, "ChatOpenAI", FakeChatOpenAI)
@@ -106,6 +108,7 @@ def test_live_traffic_missing_field_falls_back(monkeypatch):
             return SimpleNamespace(content=json.dumps({"destination": "台中"}, ensure_ascii=False))
 
     monkeypatch.setenv("USE_LIVE_TRAFFIC", "on")
+    monkeypatch.setenv("TRAFFIC_PROVIDER", "llm")
     monkeypatch.setattr(traffic_worker, "ChatOpenAI", FakeChatOpenAI)
 
     result = traffic_node(_state())
