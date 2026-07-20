@@ -54,63 +54,34 @@ def apply_update(state, update):
     return state
 
 
-def test_weather_task_context_survives_coder_and_parser(monkeypatch):
-    generated_code = (
-        "print('{\"location\":\"Taipei\",\"condition\":\"rainy\","
-        "\"temperature\":28,\"rain_probability\":80}')"
-    )
-
+def test_weather_agent_returns_structured_result_without_coder_or_sandbox(monkeypatch):
     class FakeWeatherLLM:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
 
         def invoke(self, messages):
-            return AIMessage(content="請撰寫 Python 程式碼，輸出 Taipei 天氣 JSON。")
+            return AIMessage(content=json.dumps({
+                "destination": "台北",
+                "date_range": "日期未指定",
+                "condition": "規劃估計：可能有雨",
+                "rain_probability": 80,
+                "temperature": "24-28°C",
+                "outdoor_risk": "high",
+                "recommendation": "此為規劃估計，出發前請查證官方預報。",
+            }, ensure_ascii=False))
 
-    class FakeCoderLLM:
-        def __init__(self, **kwargs):
-            self.kwargs = kwargs
-
-        def invoke(self, messages):
-            assert messages[-1].content.endswith("請撰寫 Python 程式碼，輸出 Taipei 天氣 JSON。")
-            return SimpleNamespace(content=f"```python\n{generated_code}\n```")
-
-    def fake_run_python_in_sandbox(code):
-        assert code == generated_code
-        return {
-            "status": "success",
-            "stdout": "{\"location\":\"Taipei\",\"condition\":\"rainy\",\"temperature\":28,\"rain_probability\":80}",
-            "stderr": "",
-            "error": None,
-        }
-
+    monkeypatch.setenv("USE_LIVE_WEATHER", "1")
+    monkeypatch.setenv("WEATHER_PROVIDER", "llm")
     monkeypatch.setattr(weather_worker, "ChatOpenAI", FakeWeatherLLM)
-    monkeypatch.setattr(weather_worker.time, "sleep", lambda seconds: None)
-    monkeypatch.setattr(coder_worker, "ChatOpenAI", FakeCoderLLM)
-    monkeypatch.setattr(coder_worker.time, "sleep", lambda seconds: None)
-    monkeypatch.setattr(
-        sandbox_worker.sandbox_runner,
-        "run_python_in_sandbox",
-        fake_run_python_in_sandbox,
-    )
 
     state = make_state(route="weather", next_step="weather")
 
     apply_update(state, weather_node(state))
     assert state["current_task"] == "weather"
-    assert state["next_step"] == "coder"
-
-    apply_update(state, coder_node(state))
-    assert state["current_task"] == "weather"
-    assert state["next_step"] == "e2b_sandbox"
-    assert state["generated_code"]
-
-    apply_update(state, sandbox_node(state))
+    assert state["next_step"] == "spot"
     assert state["execution_status"] == "success"
-
-    apply_update(state, parser_node(state))
-    assert state["execution_status"] == "success"
-    assert state["weather_result"]["location"] == "Taipei"
+    assert state["weather_result"]["destination"] == "台北"
+    assert state["weather_result"]["source"] == "llm"
 
 
 def test_parser_does_not_guess_result_when_only_next_step_is_e2b_sandbox():

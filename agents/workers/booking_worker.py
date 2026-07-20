@@ -7,10 +7,15 @@ from agents.workers.budget_worker import allocate_budget
 
 
 def _state_value(state: AgentState, *keys: str, default: Any = None) -> Any:
+    trip_request = state.get("trip_request", {})  # type: ignore[typeddict-item]
     for key in keys:
         value = state.get(key)  # type: ignore[arg-type]
         if value not in (None, "", []):
             return value
+        if isinstance(trip_request, dict):
+            value = trip_request.get(key)
+            if value not in (None, "", []):
+                return value
     return default
 
 
@@ -120,6 +125,8 @@ def booking_node(state: AgentState) -> dict[str, Any]:
             "booking_result": {
                 "hotels": [],
                 "recommended_hotel": None,
+                "source": "mock_hotel_data",
+                "source_detail": "Ranked from predefined mock hotel dataset using rule-based scoring.",
             },
             "execution_status": "empty_result",
             "error_traceback": "No hotel candidates found",
@@ -152,6 +159,8 @@ def booking_node(state: AgentState) -> dict[str, Any]:
         "booking_result": {
             "hotels": candidates,
             "recommended_hotel": recommended_hotel,
+            "source": "mock_hotel_data",
+            "source_detail": "Ranked from predefined mock hotel dataset using rule-based scoring.",
         },
         "budget_allocation": budget_allocation,
         "current_task": "booking",

@@ -15,6 +15,8 @@ DEMO_DEFAULTS = {
     "party_size": 1,
     "total_budget": 6000,
     "preference": "不要太趕、戶外景點",
+    "hotel_preference": "交通方便",
+    "transport_preference": "大眾運輸",
     "needs_booking": True,
     "needs_budget": True,
     "preferred_areas": ["台中車站", "逢甲"],
@@ -37,7 +39,7 @@ def _extract_number(value: str) -> int:
 
 
 def _parse_dates(text: str) -> tuple[str, str]:
-    match = re.search(r"(\d{1,2}/\d{1,2})\s*[~-]\s*(\d{1,2}/\d{1,2})", text)
+    match = re.search(r"(\d{1,2}/\d{1,2})\s*(?:[~-]|到|至)\s*(\d{1,2}/\d{1,2})", text)
     if match:
         return match.group(1), match.group(2)
     return str(DEMO_DEFAULTS["start_date"]), str(DEMO_DEFAULTS["end_date"])
@@ -60,21 +62,45 @@ def _parse_budget(text: str) -> int:
     return int(DEMO_DEFAULTS["total_budget"])
 
 
+def _origin_from_departure(value: str) -> str:
+    value = value.strip()
+    if value.endswith("車站"):
+        return value.removesuffix("車站")
+    return value
+
+
 def _parse_origin(text: str) -> str:
-    match = re.search(r"從([^()，,]+)", text)
+    match = re.search(r"從([^()（），,。]+)[(（][^()（）]*?車站出發?[)）]", text)
     if match:
-        origin = match.group(1).strip()
+        origin = _origin_from_departure(match.group(1))
         if origin:
             return origin
-    if "台北車站出發" in text:
-        return "台北"
+
+    for pattern in (
+        r"從([^()（），,。]+?車站)出發",
+        r"([^()（），,。]+?車站)出發[，,、]?\s*(?:到|去)",
+        r"從([^()（），,。]+?)出發[，,、]?\s*(?:到|去)",
+        r"從([^()（），,。]+?)(?:到|去)",
+    ):
+        match = re.search(pattern, text)
+        if match:
+            origin = _origin_from_departure(match.group(1))
+            if origin:
+                return origin
+
     return str(DEMO_DEFAULTS["origin"])
 
 
 def _parse_departure_station(text: str) -> str:
-    match = re.search(r"([^()，,]+車站)出發", text)
-    if match:
-        return match.group(1).strip()
+    for pattern in (
+        r"[(（]([^()（），,。]+?車站)出發?[)）]",
+        r"從([^()（），,。]+?車站)出發",
+        r"([^()（），,。]+?車站)出發",
+        r"從([^()（），,。]+?)出發[，,、]?\s*(?:到|去)",
+    ):
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1).strip()
     return str(DEMO_DEFAULTS["departure_station"])
 
 
@@ -95,6 +121,24 @@ def _parse_preference(text: str) -> str:
     return "、".join(preferences) or str(DEMO_DEFAULTS["preference"])
 
 
+def _parse_hotel_preference(text: str) -> str:
+    if "交通方便" in text:
+        return "交通方便"
+    if "住宿" in text:
+        return str(DEMO_DEFAULTS["hotel_preference"])
+    return ""
+
+
+def _parse_transport_preference(text: str) -> str:
+    if "高鐵" in text:
+        return "高鐵"
+    if "台鐵" in text:
+        return "台鐵"
+    if "大眾運輸" in text or "公車" in text:
+        return "大眾運輸"
+    return str(DEMO_DEFAULTS["transport_preference"])
+
+
 def parse_trip_request(text: str) -> dict[str, Any]:
     start_date, end_date = _parse_dates(text)
     days, nights = _parse_days_nights(text)
@@ -111,9 +155,13 @@ def parse_trip_request(text: str) -> dict[str, Any]:
         "party_size": 1,
         "total_budget": _parse_budget(text),
         "preference": _parse_preference(text),
+        "hotel_preference": _parse_hotel_preference(text),
+        "transport_preference": _parse_transport_preference(text),
         "needs_booking": needs_booking or bool(DEMO_DEFAULTS["needs_booking"]),
         "needs_budget": True,
         "preferred_areas": list(DEMO_DEFAULTS["preferred_areas"]),
+        "source": "rule_based_parser",
+        "source_detail": "Parsed from user query using regex/rule-based parser.",
     }
 
 

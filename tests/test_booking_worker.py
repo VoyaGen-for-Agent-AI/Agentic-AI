@@ -141,10 +141,9 @@ def test_booking_empty_result(monkeypatch):
 
     result = booking_node(make_state())
 
-    assert result["booking_result"] == {
-        "hotels": [],
-        "recommended_hotel": None,
-    }
+    assert result["booking_result"]["hotels"] == []
+    assert result["booking_result"]["recommended_hotel"] is None
+    assert result["booking_result"]["source"] == "mock_hotel_data"
     assert result["execution_status"] == "empty_result"
     assert result["error_traceback"] == "No hotel candidates found"
     assert result["current_task"] == "booking"

@@ -8,12 +8,11 @@ from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
 
 from agents.final_response import final_response_node
-from agents.stage_graph import make_stage_node
-from agents.supervisor import route_next, supervisor_node as stage_supervisor_node
 from agents.workers.booking_worker import booking_node
 from agents.workers.budget_worker import budget_node
-from agents.workers.schedule_worker import schedule_node
+from agents.workers.spot_worker import spot_node
 from agents.workers.traffic_worker import traffic_node
+from agents.workers.trip_parser_worker import trip_parser_node
 from agents.workers.travel_worker import travel_node
 from agents.workers.weather_worker import weather_node
 from core.observability import get_langfuse_callbacks
@@ -119,43 +118,28 @@ def supervisor_node(state: AgentState):
         }
 
 
-# ---------------------------------------------------------------------------
-# 構建 Graph 狀態機
-#
-# supervisor 是確定性的編排 hub；每個 stage 都是一張獨立子圖
-# (worker -> coder -> e2b_sandbox -> parser)，由 make_stage_node 包裝後只把該 stage
-# 的 result 冒泡回父圖。因此 travel / booking 可以平行執行而不會互相覆蓋狀態。
-# ---------------------------------------------------------------------------
+# Demo-safe graph:
+# trip_parser -> weather fallback -> spot -> booking -> traffic fallback
+# -> travel fallback -> budget -> final_response
 workflow = StateGraph(AgentState)
 
-workflow.add_node("supervisor", stage_supervisor_node)
-workflow.add_node("budget", make_stage_node(budget_node, "budget_result", "budget"))
-workflow.add_node("weather", make_stage_node(weather_node, "weather_result", "weather"))
-workflow.add_node("travel", make_stage_node(travel_node, "travel_result", "travel"))
-workflow.add_node("booking", make_stage_node(booking_node, "booking_result", "booking"))
-workflow.add_node("traffic", make_stage_node(traffic_node, "traffic_result", "traffic"))
-workflow.add_node("scheduler", make_stage_node(schedule_node, "scheduler_result", "scheduler"))
+workflow.add_node("trip_parser", trip_parser_node)
+workflow.add_node("weather", weather_node)
+workflow.add_node("spot", spot_node)
+workflow.add_node("booking", booking_node)
+workflow.add_node("traffic", traffic_node)
+workflow.add_node("travel", travel_node)
+workflow.add_node("budget", budget_node)
 workflow.add_node("final_response", final_response_node)
 
-workflow.set_entry_point("supervisor")
-
-workflow.add_conditional_edges(
-    "supervisor",
-    route_next,
-    {
-        "budget": "budget",
-        "weather": "weather",
-        "travel": "travel",
-        "booking": "booking",
-        "traffic": "traffic",
-        "scheduler": "scheduler",
-        "FINISH": "final_response",
-    },
-)
-
-for stage in ("budget", "weather", "travel", "booking", "traffic", "scheduler"):
-    workflow.add_edge(stage, "supervisor")
-
+workflow.set_entry_point("trip_parser")
+workflow.add_edge("trip_parser", "weather")
+workflow.add_edge("weather", "spot")
+workflow.add_edge("spot", "booking")
+workflow.add_edge("booking", "traffic")
+workflow.add_edge("traffic", "travel")
+workflow.add_edge("travel", "budget")
+workflow.add_edge("budget", "final_response")
 workflow.add_edge("final_response", END)
 
 app_graph = workflow.compile()

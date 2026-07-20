@@ -50,17 +50,21 @@ MOCK_ITINERARY_RESULT = {
                 {
                     "time": "10:00",
                     "place": "草悟道",
-                    "activity": "散步與咖啡店休息",
+                    "activity": "散步與欣賞街區景觀",
                     "type": "outdoor",
-                    "estimated_cost": 300,
+                    "estimated_cost": 0,
                     "reason": "節奏輕鬆，適合回程前安排。",
                 }
             ],
         },
     ],
-    "ticket_cost_total": 300,
+    "ticket_cost_total": 0,
     "transport_hint": "以台中市區公車與步行為主，景點集中避免移動過長。",
     "planning_reason": "行程集中於市區與逢甲周邊，符合兩天一夜且不要太趕的需求。",
+    "source": "mock_fallback",
+    "source_detail": "Live itinerary generation unavailable or failed; using fallback itinerary.",
+    "validation_status": "fallback",
+    "validation_notes": ["manual demo mock itinerary"],
 }
 
 
@@ -90,6 +94,7 @@ def apply_update(state: dict, update: dict) -> None:
 def main() -> None:
     load_dotenv(PROJECT_ROOT / ".env")
     use_live_itinerary = os.getenv("USE_LIVE_ITINERARY") == "1"
+    print("AI itinerary live mode enabled" if use_live_itinerary else "Mock itinerary mode")
 
     state = {
         "messages": [HumanMessage(content=DEMO_QUERY)],
@@ -120,9 +125,13 @@ def main() -> None:
             if state.get("execution_status") == "error":
                 print(f"itinerary error: {state.get('error_traceback', '')}")
                 return
+            itinerary_result = state.get("itinerary_result", {})
+            if isinstance(itinerary_result, dict):
+                print(f"itinerary_result source: {itinerary_result.get('source', 'unknown')}")
     else:
         state["itinerary_result"] = MOCK_ITINERARY_RESULT
         state["travel_result"] = MOCK_ITINERARY_RESULT
+        print("itinerary_result source: mock_fallback")
 
     apply_update(state, booking_node(state))  # type: ignore[arg-type]
     apply_update(state, budget_node(state))  # type: ignore[arg-type]
@@ -132,6 +141,11 @@ def main() -> None:
     print(state.get("trip_request", {}))
     print("\nitinerary_result:")
     print(state.get("itinerary_result", {}))
+    itinerary_result = state.get("itinerary_result", {})
+    if isinstance(itinerary_result, dict):
+        print("\nitinerary validation:")
+        for key in ("source", "model", "validation_status", "validation_notes", "ticket_cost_total"):
+            print(f"{key}: {itinerary_result.get(key)}")
     print("\nbooking_result:")
     print(state.get("booking_result", {}))
     print("\nbudget_result:")
