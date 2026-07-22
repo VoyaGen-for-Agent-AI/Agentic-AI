@@ -3,6 +3,7 @@ import statistics
 import sys
 import time
 from pathlib import Path
+from threading import Lock
 from typing import Any, Callable
 
 from dotenv import load_dotenv
@@ -38,6 +39,8 @@ SOURCE_KEYS = (
     "itinerary_result",
     "budget_result",
 )
+_timeline_lock = Lock()
+_active_timeline: list[dict[str, Any]] | None = None
 
 
 def _result_only_node(
@@ -45,12 +48,24 @@ def _result_only_node(
 ) -> Callable[[AgentState], dict[str, Any]]:
     """Prevent parallel branches from writing shared control-state keys."""
     def node(state: AgentState) -> dict[str, Any]:
+        start_time = time.perf_counter()
         delay = _demo_delay_seconds()
-        if delay:
-            time.sleep(delay)
-        update = worker(state)
-        result = update.get(result_key, {})
-        return {result_key: result}
+        try:
+            if delay:
+                time.sleep(delay)
+            update = worker(state)
+            result = update.get(result_key, {})
+            return {result_key: result}
+        finally:
+            end_time = time.perf_counter()
+            with _timeline_lock:
+                if _active_timeline is not None:
+                    _active_timeline.append({
+                        "node_name": result_key.removesuffix("_result"),
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "duration_seconds": end_time - start_time,
+                    })
 
     return node
 
@@ -140,6 +155,81 @@ def invoke_timed(graph, prompt: str = DEMO_PROMPT) -> tuple[dict[str, Any], floa
     return result, time.perf_counter() - started_at
 
 
+def run_with_timeline(
+    graph, prompt: str = DEMO_PROMPT
+) -> tuple[dict[str, Any], float, list[dict[str, Any]]]:
+    global _active_timeline
+    with _timeline_lock:
+        if _active_timeline is not None:
+            raise RuntimeError("A timeline capture is already active")
+        _active_timeline = []
+    try:
+        state = graph.invoke({"messages": [HumanMessage(content=prompt)]})
+        with _timeline_lock:
+            captured = list(_active_timeline or [])
+    finally:
+        with _timeline_lock:
+            _active_timeline = None
+
+    if not captured:
+        return state, 0.0, []
+    baseline = min(item["start_time"] for item in captured)
+    timeline = sorted(
+        [
+            {
+                **item,
+                "start_time": item["start_time"] - baseline,
+                "end_time": item["end_time"] - baseline,
+            }
+            for item in captured
+        ],
+        key=lambda item: item["start_time"],
+    )
+    total_seconds = max(item["end_time"] for item in timeline)
+    return state, total_seconds, timeline
+
+
+def verify_parallel_execution(
+    sequential_timeline: list[dict[str, Any]],
+    parallel_timeline: list[dict[str, Any]],
+) -> tuple[bool, str]:
+    required_nodes = {"weather", "spot", "booking"}
+    sequential = [item for item in sequential_timeline if item.get("node_name") in required_nodes]
+    parallel = [item for item in parallel_timeline if item.get("node_name") in required_nodes]
+    if {item.get("node_name") for item in sequential} != required_nodes:
+        return False, "sequential timeline 缺少 weather、spot 或 booking"
+    if {item.get("node_name") for item in parallel} != required_nodes:
+        return False, "parallel timeline 缺少 weather、spot 或 booking"
+
+    sequential_total = max(item["end_time"] for item in sequential) - min(item["start_time"] for item in sequential)
+    parallel_total = max(item["end_time"] for item in parallel) - min(item["start_time"] for item in parallel)
+    start_spread = max(item["start_time"] for item in parallel) - min(item["start_time"] for item in parallel)
+    max_duration = max(item["duration_seconds"] for item in parallel)
+    sum_duration = sum(item["duration_seconds"] for item in parallel)
+    close_to_max = abs(parallel_total - max_duration) <= max(0.1, max_duration * 0.25)
+    closer_to_max_than_sum = abs(parallel_total - max_duration) < abs(parallel_total - sum_duration)
+
+    checks = {
+        "parallel 比 sequential 快": parallel_total < sequential_total,
+        "平行節點啟動差距小於 0.1 秒": start_spread < 0.1,
+        "平行總時間接近最長節點而非節點時間總和": close_to_max and closer_to_max_than_sum,
+    }
+    verified = all(checks.values())
+    reason = "；".join(f"{label}={'是' if passed else '否'}" for label, passed in checks.items())
+    return verified, reason
+
+
+def _print_timeline(label: str, timeline: list[dict[str, Any]]) -> None:
+    print(f"[{label} timeline]")
+    for item in timeline:
+        print(
+            f"{item['node_name']}: "
+            f"start={item['start_time']:.3f}s "
+            f"end={item['end_time']:.3f}s "
+            f"duration={item['duration_seconds']:.3f}s"
+        )
+
+
 def run_benchmark(runs: int = 10, warmup: int = 2) -> dict[str, float]:
     if runs < 1:
         raise ValueError("runs must be at least 1")
@@ -203,15 +293,22 @@ def main() -> int:
         if os.getenv(variable, "").strip().lower() in {"1", "true", "yes", "on"}:
             print(f"{label} live mode enabled")
 
-    sequential_state, sequential_time = invoke_timed(sequential_graph)
-    parallel_state, parallel_time = invoke_timed(parallel_graph)
+    sequential_state, sequential_time, sequential_timeline = run_with_timeline(sequential_graph)
+    parallel_state, parallel_time, parallel_timeline = run_with_timeline(parallel_graph)
     saved_time = sequential_time - parallel_time
     reduction = (saved_time / sequential_time * 100) if sequential_time else 0.0
+    parallel_verified, verification_reason = verify_parallel_execution(
+        sequential_timeline, parallel_timeline
+    )
 
-    print(f"sequential_time_seconds: {sequential_time:.6f}")
-    print(f"parallel_time_seconds: {parallel_time:.6f}")
-    print(f"saved_time_seconds: {saved_time:.6f}")
+    _print_timeline("sequential", sequential_timeline)
+    _print_timeline("parallel", parallel_timeline)
+    print(f"sequential_total_seconds: {sequential_time:.6f}")
+    print(f"parallel_total_seconds: {parallel_time:.6f}")
+    print(f"saved_seconds: {saved_time:.6f}")
     print(f"latency_reduction_percent: {reduction:.2f}")
+    print(f"parallel_verified: {parallel_verified}")
+    print(f"verification_reason: {verification_reason}")
     _print_sources("sequential", sequential_state)
     _print_sources("parallel", parallel_state)
     print("parallel_final_answer:")

@@ -9,9 +9,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from main import app_graph
+from core.observability import get_langfuse_callbacks
 
 
 DEMO_PROMPT = "我想 7/18 到 7/19 從台北車站去台中兩天一夜，預算 6000，想要不要太趕、戶外景點，也需要住宿和預算估算"
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _env_enabled(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in _TRUE_VALUES
 
 
 def get_user_query(default_query: str) -> str:
@@ -20,44 +26,63 @@ def get_user_query(default_query: str) -> str:
 
 
 def main() -> int:
-    print(f"Weather provider: {os.getenv('WEATHER_PROVIDER', 'llm')}")
-    print(f"Traffic provider: {os.getenv('TRAFFIC_PROVIDER', 'llm')}")
-    if os.getenv("USE_LIVE_WEATHER", "").strip().lower() in {"1", "true", "yes", "on"}:
-        print("Weather live mode enabled")
-    if os.getenv("USE_LIVE_TRAFFIC", "").strip().lower() in {"1", "true", "yes", "on"}:
-        print("Traffic live mode enabled")
-    if os.getenv("USE_LIVE_ITINERARY", "").strip().lower() in {"1", "true", "yes", "on"}:
-        print("Itinerary live mode enabled")
+    show_debug = _env_enabled("DEMO_SHOW_DEBUG")
+    if show_debug:
+        print(f"Weather provider: {os.getenv('WEATHER_PROVIDER', 'llm')}")
+        print(f"Traffic provider: {os.getenv('TRAFFIC_PROVIDER', 'llm')}")
+        if _env_enabled("USE_LIVE_WEATHER"):
+            print("Weather live mode enabled")
+        if _env_enabled("USE_LIVE_TRAFFIC"):
+            print("Traffic live mode enabled")
+        if _env_enabled("USE_LIVE_ITINERARY"):
+            print("Itinerary live mode enabled")
 
     user_query = get_user_query(DEMO_PROMPT)
     print(f"user_query: {user_query}")
-    state = app_graph.invoke({"messages": [HumanMessage(content=user_query)]})
+    callbacks = get_langfuse_callbacks()
+    print("Observability enabled" if callbacks else "Observability disabled")
+    initial_state = {"messages": [HumanMessage(content=user_query)]}
+    state = app_graph.invoke(
+        initial_state,
+        config={
+            "callbacks": callbacks,
+            "metadata": {
+                "demo": "manual_main_graph_demo",
+                "user_query": user_query,
+                "weather_provider": os.getenv("WEATHER_PROVIDER"),
+                "traffic_provider": os.getenv("TRAFFIC_PROVIDER"),
+                "llm_model": os.getenv("LLM_MODEL"),
+            },
+            "tags": ["demo", "main_graph", "travel_agent"],
+        },
+    )
 
-    for key in ("weather_result", "traffic_result", "itinerary_result"):
-        result = state.get(key, {})
-        source = result.get("source", "unknown") if isinstance(result, dict) else "unknown"
-        print(f"{key} source: {source}")
+    if show_debug:
+        for key in ("weather_result", "traffic_result", "itinerary_result"):
+            result = state.get(key, {})
+            source = result.get("source", "unknown") if isinstance(result, dict) else "unknown"
+            print(f"{key} source: {source}")
 
-    for key in (
-        "trip_request",
-        "weather_result",
-        "spot_result",
-        "booking_result",
-        "traffic_result",
-        "itinerary_result",
-        "travel_result",
-        "budget_result",
-    ):
-        result = state.get(key, {})
-        if isinstance(result, dict) and result.get("source"):
-            print(f"[{key}] source: {result['source']}")
-        print(f"{key}:")
-        print(result)
-        print()
+        for key in (
+            "trip_request",
+            "weather_result",
+            "spot_result",
+            "booking_result",
+            "traffic_result",
+            "itinerary_result",
+            "travel_result",
+            "budget_result",
+        ):
+            result = state.get(key, {})
+            if isinstance(result, dict) and result.get("source"):
+                print(f"[{key}] source: {result['source']}")
+            print(f"{key}:")
+            print(result)
+            print()
 
     print("final_answer:")
     print(state.get("final_answer", ""))
-    if state.get("execution_status") == "fallback" and state.get("error_traceback"):
+    if show_debug and state.get("execution_status") == "fallback" and state.get("error_traceback"):
         print("\nerror_traceback:")
         print(state["error_traceback"])
     return 0
