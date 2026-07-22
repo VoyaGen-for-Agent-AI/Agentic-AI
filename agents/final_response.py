@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from collections.abc import Callable
 from typing import Any
@@ -168,6 +169,10 @@ def format_source_summary(state: AgentState) -> str:
         if isinstance(result, dict) and result.get("source"):
             lines.append(f"- {label}：{result['source']}")
     return "\n".join(lines) if len(lines) > 1 else ""
+
+
+def _show_source_summary() -> bool:
+    return os.getenv("DEMO_SHOW_SOURCES", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def format_booking_response(result: dict[str, Any]) -> str:
@@ -343,7 +348,7 @@ def final_response_node(state: AgentState):
         sections.append("總結建議：\n本行程以交通方便、戶外景點與不要太趕為原則；實際出發前請再次確認天氣、交通與票價。")
         if has_critic_feedback:
             sections.append(format_critic_feedback(critic_feedback))
-        source_summary = format_source_summary(state)
+        source_summary = format_source_summary(state) if _show_source_summary() else ""
         if source_summary:
             sections.append(source_summary)
         final_answer = "\n\n".join(sections)
@@ -364,7 +369,7 @@ def final_response_node(state: AgentState):
         sections.append("四、總結建議\n請依天氣與現場狀況保留彈性，預算則以明細為基準控管。")
         if has_critic_feedback:
             sections.append(format_critic_feedback(critic_feedback))
-        source_summary = format_source_summary(state)
+        source_summary = format_source_summary(state) if _show_source_summary() else ""
         if source_summary:
             sections.append(source_summary)
         final_answer = "\n\n".join(sections)
@@ -380,7 +385,7 @@ def final_response_node(state: AgentState):
         sections.extend([format_booking_response(booking_result), format_budget_response(budget_result)])
         if has_critic_feedback:
             sections.append(format_critic_feedback(critic_feedback))
-        source_summary = format_source_summary(state)
+        source_summary = format_source_summary(state) if _show_source_summary() else ""
         if source_summary:
             sections.append(source_summary)
         final_answer = "\n\n".join(sections)
@@ -417,7 +422,7 @@ def final_response_node(state: AgentState):
             final_answer = format_critic_feedback(critic_feedback)
         else:
             final_answer = f"{final_answer}\n\n{format_critic_feedback(critic_feedback)}"
-    source_summary = format_source_summary(state)
+    source_summary = format_source_summary(state) if _show_source_summary() else ""
     if source_summary and final_answer != FALLBACK_ANSWER:
         final_answer = f"{final_answer}\n\n{source_summary}"
 

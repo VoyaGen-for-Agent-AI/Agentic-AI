@@ -12,6 +12,7 @@ DEMO_PROMPT = "我想在 7/18 到 7/19 從台北車站出發去台中兩天一�
 
 
 def test_main_graph_demo_flow_without_external_keys(monkeypatch):
+    monkeypatch.setenv("DEMO_SHOW_SOURCES", "0")
     monkeypatch.setenv("USE_LIVE_WEATHER", "0")
     monkeypatch.setenv("USE_LIVE_TRAFFIC", "0")
     monkeypatch.setenv("USE_LIVE_ITINERARY", "0")
@@ -33,5 +34,15 @@ def test_main_graph_demo_flow_without_external_keys(monkeypatch):
     assert result["final_answer"]
 
     final_answer = result["final_answer"]
-    for keyword in ("台中", "天氣", "景點", "住宿", "交通", "行程", "預算"):
+    for keyword in (
+        "需求摘要",
+        "天氣建議",
+        "景點推薦",
+        "交通摘要",
+        "行程安排",
+        "住宿建議",
+        "預算估算",
+        "總結建議",
+    ):
         assert keyword in final_answer
+    assert "資料來源摘要" not in final_answer

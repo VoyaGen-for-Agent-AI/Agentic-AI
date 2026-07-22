@@ -15,6 +15,7 @@ DEMO_PROMPT = (
 
 
 def test_main_graph_results_include_provenance(monkeypatch):
+    monkeypatch.setenv("DEMO_SHOW_SOURCES", "1")
     monkeypatch.setenv("USE_LIVE_WEATHER", "0")
     monkeypatch.setenv("USE_LIVE_TRAFFIC", "0")
     monkeypatch.setenv("USE_LIVE_ITINERARY", "0")
