@@ -1,9 +1,141 @@
+import json
+import os
+import re
 from typing import Any
+
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 
 from core.state import AgentState
 from data.mock_hotels import TAICHUNG_HOTELS
 
 from agents.workers.budget_worker import allocate_budget
+
+
+# 有內建 mock 資料的城市 → 走離線 mock；其他城市（台南…）→ USE_LIVE_BOOKING 開啟時即時抓取。
+# 只存城市名，實際房源在呼叫時動態讀取 TAICHUNG_HOTELS 全域（可被測試 monkeypatch）。
+MOCK_HOTEL_CITIES = {"台中", "臺中"}
+
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+BOOKING_LIVE_SYSTEM_PROMPT = """你是台灣在地訂房規劃專員。根據使用者提供的『目的地城市、每晚住宿預算、住宿晚數、住宿偏好』，
+推薦 4~5 間該城市『真實或高度貼近真實』的住宿選擇，涵蓋不同價位與區域。
+
+嚴格要求：
+1. 住宿需位於該目的地城市，不要出現其他城市的區域名稱。
+2. 價格請以新台幣『每晚』整數估計，貼近當地實際行情。
+3. 只輸出 JSON，不要任何多餘文字。格式為 JSON 陣列，每個元素：
+   {"name": str, "area": str（該城市的區域/商圈）, "price_per_night": int, "rating": float（0~5）, "tags": [str, ...]}"""
+
+
+def _env_enabled(name: str) -> bool:
+    return str(os.getenv(name, "")).strip().lower() in _TRUE_VALUES
+
+
+def _using_mock_llm() -> bool:
+    return not str(getattr(ChatOpenAI, "__module__", "")).startswith("langchain_openai")
+
+
+def _extract_json(content: str) -> str:
+    match = re.search(r"```(?:json)?\s*(.*?)\s*```", content, re.DOTALL)
+    return match.group(1).strip() if match else content.strip()
+
+
+def _normalize_hotel(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    name = str(raw.get("name", "")).strip()
+    if not name:
+        return None
+    try:
+        price = max(0, int(float(raw.get("price_per_night", 0) or 0)))
+    except (TypeError, ValueError):
+        price = 0
+    if not price:
+        return None
+    try:
+        rating = float(raw.get("rating", 0) or 0)
+    except (TypeError, ValueError):
+        rating = 0.0
+    rating = min(max(rating, 0.0), 5.0)
+    tags = raw.get("tags", [])
+    if not isinstance(tags, list):
+        tags = [str(tags)] if tags else []
+    return {
+        "name": name,
+        "area": str(raw.get("area", "")).strip() or "市區",
+        "price_per_night": price,
+        "rating": rating,
+        "tags": [str(tag) for tag in tags if str(tag).strip()],
+    }
+
+
+def fetch_live_hotels(
+    destination: str, hotel_budget: int, nights: int, preference: str
+) -> list[dict[str, Any]]:
+    """即時抓取非內建城市的住宿候選（LLM 結構化輸出），回傳與 mock 相同 schema 的清單。"""
+    if not _using_mock_llm() and not (os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")):
+        raise ValueError("LLM API key not configured")
+
+    per_night_budget = int(hotel_budget / max(int(nights or 1), 1)) if hotel_budget else 0
+    context = {
+        "destination": destination,
+        "per_night_budget": per_night_budget or "未指定",
+        "nights": nights,
+        "preference": preference,
+    }
+    llm = ChatOpenAI(
+        base_url=os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
+        model=os.getenv("BOOKING_MODEL", os.getenv("LLM_MODEL", "openai/gpt-4o-mini")),
+        api_key=os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"),  # type: ignore[arg-type]
+    )
+    response = llm.invoke([
+        SystemMessage(content=BOOKING_LIVE_SYSTEM_PROMPT),
+        HumanMessage(content=json.dumps(context, ensure_ascii=False)),
+    ])
+
+    parsed = json.loads(_extract_json(str(response.content)))
+    if isinstance(parsed, dict):
+        parsed = parsed.get("hotels", parsed.get("results", []))
+    if not isinstance(parsed, list) or not parsed:
+        raise ValueError("live hotel response is not a non-empty JSON array")
+
+    hotels = [hotel for hotel in (_normalize_hotel(raw) for raw in parsed) if hotel]
+    if not hotels:
+        raise ValueError("no valid hotels after normalization")
+    return hotels
+
+
+def _resolve_hotels(
+    destination: str, hotel_budget: int, nights: int, preference: str
+) -> tuple[list[dict[str, Any]], str, str]:
+    """回傳 (住宿清單, source, source_detail)。台中走 mock，其他城市視旗標即時抓、失敗退回 mock。"""
+    if destination in MOCK_HOTEL_CITIES:
+        return (
+            TAICHUNG_HOTELS,
+            "mock_hotel_data",
+            "Ranked from predefined mock hotel dataset using rule-based scoring.",
+        )
+
+    errors: list[str] = []
+    if _env_enabled("USE_LIVE_BOOKING"):
+        try:
+            hotels = fetch_live_hotels(destination, hotel_budget, nights, preference)
+            if hotels:
+                return (
+                    hotels,
+                    "live_llm",
+                    f"由 LLM 即時產生 {destination} 住宿候選，再以 rule-based scoring 排序。",
+                )
+        except Exception as exc:
+            errors.append(str(exc))
+
+    reason = "; ".join(errors) or "USE_LIVE_BOOKING 未啟用"
+    return (
+        TAICHUNG_HOTELS,
+        "mock_fallback",
+        f"{destination} 無內建住宿資料且即時抓取未啟用/失敗（{reason}），暫以台中樣本示意。",
+    )
 
 
 def _state_value(state: AgentState, *keys: str, default: Any = None) -> Any:
@@ -119,7 +251,9 @@ def booking_node(state: AgentState) -> dict[str, Any]:
 
     hotel_budget = int(budget_allocation["hotel_budget"])
 
-    hotel_source = TAICHUNG_HOTELS if destination == "台中" else TAICHUNG_HOTELS
+    hotel_source, hotel_source_tag, hotel_source_detail = _resolve_hotels(
+        str(destination), hotel_budget, nights, preference
+    )
     if not hotel_source:
         return {
             "booking_result": {
@@ -159,8 +293,8 @@ def booking_node(state: AgentState) -> dict[str, Any]:
         "booking_result": {
             "hotels": candidates,
             "recommended_hotel": recommended_hotel,
-            "source": "mock_hotel_data",
-            "source_detail": "Ranked from predefined mock hotel dataset using rule-based scoring.",
+            "source": hotel_source_tag,
+            "source_detail": hotel_source_detail,
         },
         "budget_allocation": budget_allocation,
         "current_task": "booking",
