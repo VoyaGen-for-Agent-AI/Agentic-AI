@@ -4,6 +4,7 @@ import re
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, StateGraph
 
@@ -25,6 +26,18 @@ if not (os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")):
     print("警告：找不到 OPENROUTER_API_KEY 或 OPENAI_API_KEY！")
 
 app = FastAPI()
+
+# 允許本機前端 (Vite dev server) 跨埠呼叫 /chat。
+# demo 用途，開發環境放行 localhost:5173；正式部署請改成實際網域白名單。
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 VALID_ROUTES = {

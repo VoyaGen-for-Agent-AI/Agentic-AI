@@ -4,6 +4,9 @@ import re
 from typing import Any
 from urllib.request import Request, urlopen
 
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+
 from core.state import AgentState
 
 
@@ -67,6 +70,11 @@ _KNOWN_AREAS = {
     "宮原眼科": "台中車站",
     "逢甲夜市": "逢甲",
 }
+SPOTS_BY_CITY = {"台中": TAICHUNG_SPOTS, "臺中": TAICHUNG_SPOTS}
+_ALLOWED_LLM_SPOT_TYPES = {"outdoor", "indoor", "semi_indoor"}
+SPOT_LIVE_SYSTEM_PROMPT = """你是台灣在地旅遊景點規劃專員。請根據目的地、偏好、天數、天氣風險與搜尋摘要，推薦 5 至 6 個真實存在的當地景點。
+只輸出 JSON 陣列，不要 Markdown 或額外文字。每個元素格式：
+{"name": str, "type": "outdoor|indoor|semi_indoor", "area": str, "estimated_cost": int, "duration_minutes": int, "reason": str}"""
 
 
 def _state_value(state: AgentState, *keys: str, default: Any = None) -> Any:
@@ -265,6 +273,85 @@ def fetch_tavily_spots(
     }
 
 
+def _extract_json(content: str) -> str:
+    match = re.search(r"```(?:json)?\s*(.*?)\s*```", content, re.DOTALL)
+    return match.group(1).strip() if match else content.strip()
+
+
+def _normalize_llm_spot(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    name = str(raw.get("name", "")).strip()
+    if not name:
+        return None
+    spot_type = str(raw.get("type", "outdoor")).strip().lower()
+    if spot_type not in _ALLOWED_LLM_SPOT_TYPES:
+        spot_type = "outdoor"
+    try:
+        cost = max(0, int(float(raw.get("estimated_cost", 0) or 0)))
+    except (TypeError, ValueError):
+        cost = 0
+    try:
+        duration = int(float(raw.get("duration_minutes", 90) or 90))
+    except (TypeError, ValueError):
+        duration = 90
+    return {
+        "name": name,
+        "type": spot_type,
+        "area": str(raw.get("area", "")).strip() or "市區",
+        "estimated_cost": cost,
+        "duration_minutes": min(max(duration, 30), 240),
+        "reason": str(raw.get("reason", "")).strip() or "符合旅遊偏好的推薦景點。",
+    }
+
+
+def fetch_live_spot_result(state: AgentState, destination: str) -> dict[str, Any]:
+    """Preserve the merged branch's LLM option for cities without built-in mock data."""
+    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if not api_key and str(getattr(ChatOpenAI, "__module__", "")).startswith("langchain_openai"):
+        raise ValueError("LLM API key not configured")
+
+    preference = str(_state_value(state, "preference", default=""))
+    weather_result = state.get("weather_result", {})
+    outdoor_risk = (
+        str(weather_result.get("outdoor_risk", "unknown"))
+        if isinstance(weather_result, dict)
+        else "unknown"
+    )
+    context = {
+        "destination": destination,
+        "preference": preference,
+        "days": int(_state_value(state, "days", default=2) or 2),
+        "outdoor_risk": outdoor_risk,
+    }
+    llm = ChatOpenAI(
+        base_url=os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
+        model=os.getenv("SPOT_MODEL", os.getenv("LLM_MODEL", "openai/gpt-4o-mini")),
+        api_key=api_key,  # type: ignore[arg-type]
+    )
+    response = llm.invoke([
+        SystemMessage(content=SPOT_LIVE_SYSTEM_PROMPT),
+        HumanMessage(content=json.dumps(context, ensure_ascii=False)),
+    ])
+    parsed = json.loads(_extract_json(str(response.content)))
+    if isinstance(parsed, dict):
+        parsed = parsed.get("spots", parsed.get("results", []))
+    if not isinstance(parsed, list):
+        raise ValueError("live spot response is not a JSON array")
+    spots = [spot for spot in (_normalize_llm_spot(raw) for raw in parsed) if spot]
+    if not spots:
+        raise ValueError("no valid spots after normalization")
+    spots = spots[:6]
+    return {
+        "destination": destination,
+        "spots": spots,
+        "ticket_cost_total": sum(int(spot["estimated_cost"]) for spot in spots),
+        "recommendation": "以符合偏好且真實存在的景點為主，並依天氣風險調整室內外比例。",
+        "source": "live_llm",
+        "source_detail": f"由 LLM 即時產生 {destination} 景點。",
+    }
+
+
 def spot_node(state: AgentState) -> dict[str, Any]:
     live_enabled = os.getenv("USE_LIVE_SPOT", "").strip().lower() in _TRUE_VALUES
     provider = os.getenv("SPOT_PROVIDER", "mock").strip().lower()
@@ -288,6 +375,29 @@ def spot_node(state: AgentState) -> dict[str, Any]:
         except Exception as exc:
             return {
                 "spot_result": build_mock_spot_result(state),
+                "execution_status": "fallback",
+                "error_traceback": str(exc),
+                "current_task": "spot",
+                "next_step": "booking",
+            }
+    destination = str(_state_value(state, "destination", default="台中") or "台中")
+    if live_enabled and destination not in SPOTS_BY_CITY:
+        try:
+            return {
+                "spot_result": fetch_live_spot_result(state, destination),
+                "execution_status": "success",
+                "error_traceback": "",
+                "current_task": "spot",
+                "next_step": "booking",
+            }
+        except Exception as exc:
+            fallback = build_mock_spot_result(state)
+            fallback["source"] = "mock_fallback"
+            fallback["source_detail"] = (
+                f"{destination} 即時景點產生失敗，暫以 mock 景點示意。"
+            )
+            return {
+                "spot_result": fallback,
                 "execution_status": "fallback",
                 "error_traceback": str(exc),
                 "current_task": "spot",
