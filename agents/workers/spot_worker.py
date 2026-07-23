@@ -1,4 +1,8 @@
+import json
+import os
+import re
 from typing import Any
+from urllib.request import Request, urlopen
 
 from core.state import AgentState
 
@@ -53,6 +57,16 @@ TAICHUNG_SPOTS = [
         "reason": "晚間餐飲選擇多，適合第一天晚上安排。",
     },
 ]
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+_NON_SPOT_KEYWORDS = ("飯店", "旅館", "住宿", "訂房", "機票", "航班", "高鐵時刻", "交通攻略", "租車", "廣告")
+_KNOWN_AREAS = {
+    "審計新村": "草悟道",
+    "草悟道": "草悟道",
+    "高美濕地": "清水",
+    "國家歌劇院": "七期",
+    "宮原眼科": "台中車站",
+    "逢甲夜市": "逢甲",
+}
 
 
 def _state_value(state: AgentState, *keys: str, default: Any = None) -> Any:
@@ -114,7 +128,171 @@ def build_mock_spot_result(state: AgentState) -> dict[str, Any]:
     }
 
 
+def _infer_spot_type(text: str) -> str:
+    rules = (
+        ("nature", ("自然", "濕地", "森林", "海岸", "瀑布")),
+        ("food", ("美食", "夜市", "市場", "小吃")),
+        ("shopping", ("購物", "商圈", "百貨")),
+        ("semi_indoor", ("半室內", "園區")),
+        ("indoor", ("室內", "博物館", "美術館", "展覽")),
+        ("culture", ("文化", "古蹟", "歌劇院", "歷史")),
+        ("outdoor", ("戶外", "步道", "公園", "散步")),
+    )
+    for spot_type, keywords in rules:
+        if any(keyword in text for keyword in keywords):
+            return spot_type
+    return "unknown"
+
+
+def _extract_spot_name(title: str, destination: str) -> str:
+    name = re.split(r"[｜|]", title, maxsplit=1)[0]
+    name = re.sub(rf"^{re.escape(destination)}(?:市)?\s*", "", name).strip(" -：:，,")
+    name = re.sub(r"(?:景點)?推薦|旅遊攻略|必去景點|景點", "", name).strip(" -：:，,")
+    return name
+
+
+def _extract_cost(text: str) -> int:
+    if "免費" in text or "免門票" in text:
+        return 0
+    match = re.search(r"(?:門票|票價|費用)[^\d]{0,12}(\d{1,5})\s*元", text)
+    return max(0, int(match.group(1))) if match else 0
+
+
+def _default_duration(spot_type: str) -> int:
+    if spot_type in {"outdoor", "nature"}:
+        return 120
+    return 90
+
+
+def _normalize_tavily_candidates(
+    destination: str, results: list[Any]
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    spots: list[dict[str, Any]] = []
+    references: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        title = str(result.get("title", "")).strip()
+        snippet = str(result.get("content", "")).strip()
+        url = str(result.get("url", "")).strip()
+        combined = f"{title} {snippet}"
+        references.append({"title": title, "url": url, "snippet": snippet[:500]})
+        if not title or any(keyword in combined for keyword in _NON_SPOT_KEYWORDS):
+            continue
+        if destination == "台中" and "台中" not in combined:
+            continue
+        name = str(result.get("name") or _extract_spot_name(title, destination)).strip()
+        dedupe_key = re.sub(r"\s+", "", name).lower()
+        if not name or not dedupe_key or dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        spot_type = str(result.get("type") or _infer_spot_type(combined)).lower()
+        allowed_types = {"outdoor", "indoor", "semi_indoor", "food", "culture", "nature", "shopping", "unknown"}
+        if spot_type not in allowed_types:
+            spot_type = "unknown"
+        duration_match = re.search(r"(\d{1,3})\s*分鐘", combined)
+        duration = int(duration_match.group(1)) if duration_match else _default_duration(spot_type)
+        spots.append({
+            "name": name,
+            "type": spot_type,
+            "area": str(result.get("area") or _KNOWN_AREAS.get(name) or "待確認"),
+            "estimated_cost": _extract_cost(combined),
+            "duration_minutes": duration,
+            "reason": snippet[:160] or f"根據 Tavily 搜尋結果列為 {destination} 景點候選。",
+            "source_title": title,
+        })
+        if len(spots) == 6:
+            break
+    return spots, references
+
+
+def fetch_tavily_spots(
+    destination: str, preference: str, trip_request: dict[str, Any]
+) -> dict[str, Any]:
+    api_key = (os.getenv("TAVILY_API_KEY") or "").strip()
+    if not api_key:
+        raise ValueError("TAVILY_API_KEY is not configured")
+    query = f"{destination} 景點推薦 戶外 自然 市區 交通方便"
+    if "戶外" in preference:
+        query = f"{destination} 戶外景點 自然景觀 散步 兩天一夜 不要太趕 推薦"
+    elif "親子" in preference:
+        query = f"{destination} 親子景點 室內戶外 推薦"
+    elif "美食" in preference:
+        query = f"{destination} 美食景點 市場 夜市 推薦"
+    request = Request(
+        "https://api.tavily.com/search",
+        data=json.dumps({
+            "api_key": api_key,
+            "query": query,
+            "search_depth": "basic",
+            "max_results": 8,
+        }).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=15) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    results = payload.get("results")
+    if not isinstance(results, list):
+        raise ValueError("Tavily response missing results list")
+    spots, references = _normalize_tavily_candidates(destination, results)
+
+    source = "tavily_search"
+    if len(spots) < 3:
+        source = "tavily_search_with_mock_fallback"
+        mock_state = {
+            "destination": destination,
+            "preference": preference,
+            "days": trip_request.get("days", 2),
+        }
+        for mock_spot in build_mock_spot_result(mock_state)["spots"]:
+            if len(spots) >= 3:
+                break
+            if any(spot["name"] == mock_spot["name"] for spot in spots):
+                continue
+            spots.append({**mock_spot, "source_title": "mock_spot_data"})
+
+    spots = spots[:6]
+    return {
+        "destination": destination,
+        "spots": spots,
+        "ticket_cost_total": sum(int(spot.get("estimated_cost", 0)) for spot in spots),
+        "recommendation": "依 Tavily 搜尋結果整理景點，請在出發前確認開放時間與票價。",
+        "source": source,
+        "source_detail": "Selected from Tavily Search results and normalized by Spot Agent.",
+        "references": references,
+    }
+
+
 def spot_node(state: AgentState) -> dict[str, Any]:
+    live_enabled = os.getenv("USE_LIVE_SPOT", "").strip().lower() in _TRUE_VALUES
+    provider = os.getenv("SPOT_PROVIDER", "mock").strip().lower()
+    if live_enabled and provider == "tavily":
+        try:
+            trip_request = state.get("trip_request", {})
+            if not isinstance(trip_request, dict):
+                trip_request = {}
+            spot_result = fetch_tavily_spots(
+                str(_state_value(state, "destination", default="台中")),
+                str(_state_value(state, "preference", default="不要太趕、戶外景點")),
+                trip_request,
+            )
+            return {
+                "spot_result": spot_result,
+                "execution_status": "success",
+                "error_traceback": "",
+                "current_task": "spot",
+                "next_step": "booking",
+            }
+        except Exception as exc:
+            return {
+                "spot_result": build_mock_spot_result(state),
+                "execution_status": "fallback",
+                "error_traceback": str(exc),
+                "current_task": "spot",
+                "next_step": "booking",
+            }
     return {
         "spot_result": build_mock_spot_result(state),
         "current_task": "spot",

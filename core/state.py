@@ -62,6 +62,7 @@ class AgentState(TypedDict):
     budget_result: dict[str, Any]
     transport_result: dict[str, Any]
     traffic_result: dict[str, Any]
+    e2b_validation_result: dict[str, Any]
     spot_result: dict[str, Any]
     scheduler_result: dict[str, Any]
     safety_result: dict[str, Any]
@@ -84,7 +85,7 @@ class AgentState(TypedDict):
     critic_feedback: Optional[Dict[str, Any]]
 
     # 執行狀態
-    execution_status: Literal["success", "error", "timeout", "empty_result", "over_budget", "fallback"]
+    execution_status: Literal["success", "error", "timeout", "empty_result", "over_budget", "fallback", "skipped"]
 
     # 紀錄重試次數，避免無限迴圈
     retry_count: int

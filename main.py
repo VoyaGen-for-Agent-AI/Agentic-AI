@@ -9,6 +9,7 @@ from langgraph.graph import END, StateGraph
 
 from agents.final_response import final_response_node
 from agents.workers.booking_worker import booking_node
+from agents.workers.e2b_validation_worker import e2b_validation_node
 from agents.workers.budget_worker import budget_node
 from agents.workers.spot_worker import spot_node
 from agents.workers.traffic_worker import traffic_node
@@ -129,6 +130,7 @@ workflow.add_node("spot", spot_node)
 workflow.add_node("booking", booking_node)
 workflow.add_node("traffic", traffic_node)
 workflow.add_node("travel", travel_node)
+workflow.add_node("e2b_validation", e2b_validation_node)
 workflow.add_node("budget", budget_node)
 workflow.add_node("final_response", final_response_node)
 
@@ -138,7 +140,8 @@ workflow.add_edge("weather", "spot")
 workflow.add_edge("spot", "booking")
 workflow.add_edge("booking", "traffic")
 workflow.add_edge("traffic", "travel")
-workflow.add_edge("travel", "budget")
+workflow.add_edge("travel", "e2b_validation")
+workflow.add_edge("e2b_validation", "budget")
 workflow.add_edge("budget", "final_response")
 workflow.add_edge("final_response", END)
 

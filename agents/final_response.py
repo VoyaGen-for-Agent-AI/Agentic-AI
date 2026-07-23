@@ -154,6 +154,23 @@ def format_critic_feedback(result: dict[str, Any]) -> str:
     )
 
 
+def format_e2b_validation_response(result: dict[str, Any]) -> str:
+    lines = [
+        "系統檢查：",
+        f"- 檢查狀態：{result.get('validation_status', 'unknown')}",
+    ]
+    issues = result.get("issues", [])
+    if isinstance(issues, list):
+        for issue in issues[:3]:
+            if isinstance(issue, dict):
+                lines.append(
+                    f"- [{issue.get('severity', 'unknown')}] {issue.get('message', '')}"
+                )
+    if result.get("recommendation"):
+        lines.append(f"- 建議：{result['recommendation']}")
+    return "\n".join(lines)
+
+
 def format_source_summary(state: AgentState) -> str:
     source_map = [
         ("需求解析", state.get("trip_request", {})),
@@ -317,6 +334,7 @@ def final_response_node(state: AgentState):
     traffic_result = state.get("traffic_result", {})
     booking_result = state.get("booking_result", {})
     budget_result = state.get("budget_result", {})
+    e2b_validation_result = state.get("e2b_validation_result", {})
     critic_feedback = state.get("critic_feedback") or state.get("critic_result") or {}
     has_itinerary_result = isinstance(itinerary_result, dict) and bool(itinerary_result)
     has_weather_result = isinstance(weather_result, dict) and bool(weather_result)
@@ -324,6 +342,7 @@ def final_response_node(state: AgentState):
     has_traffic_result = isinstance(traffic_result, dict) and bool(traffic_result)
     has_booking_result = isinstance(booking_result, dict) and bool(booking_result)
     has_budget_result = isinstance(budget_result, dict) and bool(budget_result)
+    has_e2b_validation_result = isinstance(e2b_validation_result, dict) and bool(e2b_validation_result)
     has_critic_feedback = isinstance(critic_feedback, dict) and bool(critic_feedback)
 
     if has_weather_result or has_spot_result or has_traffic_result:
@@ -345,6 +364,8 @@ def final_response_node(state: AgentState):
             sections.append(booking_text)
         if has_budget_result:
             sections.append(format_budget_response(budget_result))
+        if has_e2b_validation_result:
+            sections.append(format_e2b_validation_response(e2b_validation_result))
         sections.append("總結建議：\n本行程以交通方便、戶外景點與不要太趕為原則；實際出發前請再次確認天氣、交通與票價。")
         if has_critic_feedback:
             sections.append(format_critic_feedback(critic_feedback))
@@ -366,6 +387,8 @@ def final_response_node(state: AgentState):
             sections.append(f"二、{format_booking_response(booking_result)}")
         if has_budget_result:
             sections.append(f"三、{format_budget_response(budget_result)}")
+        if has_e2b_validation_result:
+            sections.append(format_e2b_validation_response(e2b_validation_result))
         sections.append("四、總結建議\n請依天氣與現場狀況保留彈性，預算則以明細為基準控管。")
         if has_critic_feedback:
             sections.append(format_critic_feedback(critic_feedback))
@@ -383,6 +406,8 @@ def final_response_node(state: AgentState):
         if isinstance(trip_request, dict) and trip_request:
             sections.append(format_trip_request_summary(trip_request))
         sections.extend([format_booking_response(booking_result), format_budget_response(budget_result)])
+        if has_e2b_validation_result:
+            sections.append(format_e2b_validation_response(e2b_validation_result))
         if has_critic_feedback:
             sections.append(format_critic_feedback(critic_feedback))
         source_summary = format_source_summary(state) if _show_source_summary() else ""
@@ -422,6 +447,11 @@ def final_response_node(state: AgentState):
             final_answer = format_critic_feedback(critic_feedback)
         else:
             final_answer = f"{final_answer}\n\n{format_critic_feedback(critic_feedback)}"
+    if has_e2b_validation_result and "系統檢查：" not in final_answer:
+        if final_answer == FALLBACK_ANSWER:
+            final_answer = format_e2b_validation_response(e2b_validation_result)
+        else:
+            final_answer = f"{final_answer}\n\n{format_e2b_validation_response(e2b_validation_result)}"
     source_summary = format_source_summary(state) if _show_source_summary() else ""
     if source_summary and final_answer != FALLBACK_ANSWER:
         final_answer = f"{final_answer}\n\n{source_summary}"

@@ -17,7 +17,8 @@ def make_state(**overrides):
     return state
 
 
-def test_spot_node_generates_spot_result():
+def test_spot_node_generates_spot_result(monkeypatch):
+    monkeypatch.setenv("USE_LIVE_SPOT", "0")
     result = spot_node(make_state())
 
     assert result["current_task"] == "spot"
@@ -30,7 +31,8 @@ def test_spot_node_generates_spot_result():
     )
 
 
-def test_spot_node_adjusts_for_high_outdoor_risk():
+def test_spot_node_adjusts_for_high_outdoor_risk(monkeypatch):
+    monkeypatch.setenv("USE_LIVE_SPOT", "0")
     result = spot_node(make_state(weather_result={"outdoor_risk": "high"}))
 
     first_types = [spot["type"] for spot in result["spot_result"]["spots"][:2]]
