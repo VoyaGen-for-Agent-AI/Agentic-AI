@@ -11,16 +11,16 @@ from scripts.manual_parallel_graph_demo import (
     run_benchmark,
     run_with_timeline,
     sequential_graph,
-    verify_parallel_execution,
+    verify_parallel_timeline,
 )
 
 
 def _disable_live_modes(monkeypatch):
-    for name in ("USE_LIVE_WEATHER", "USE_LIVE_TRAFFIC", "USE_LIVE_ITINERARY"):
+    for name in ("USE_LIVE_WEATHER", "USE_LIVE_SPOT", "USE_LIVE_TRAFFIC", "USE_LIVE_ITINERARY"):
         monkeypatch.setenv(name, "0")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.delenv("PARALLEL_DEMO_DELAY_SECONDS", raising=False)
+    monkeypatch.setenv("PARALLEL_DEMO_DELAY_SECONDS", "0")
 
 
 def test_sequential_graph_can_complete_without_api_key(monkeypatch):
@@ -44,6 +44,7 @@ def test_parallel_graph_can_complete_and_join_results_without_api_key(monkeypatc
     assert result["weather_result"]["source"] == "mock_fallback"
     assert result["traffic_result"]["source"] == "mock_fallback"
     assert result["itinerary_result"]["source"] == "mock_fallback"
+    assert result["e2b_validation_result"]["source"] == "e2b_skipped"
 
 
 def test_benchmark_summary_contains_numeric_statistics(monkeypatch):
@@ -74,7 +75,7 @@ def test_timeline_contains_required_fields(monkeypatch):
     _, total_seconds, timeline = run_with_timeline(parallel_graph)
 
     assert isinstance(total_seconds, float)
-    assert {item["node_name"] for item in timeline} == {"weather", "spot", "booking"}
+    assert {item["node_name"] for item in timeline} == {"weather", "spot", "booking", "traffic"}
     for item in timeline:
         assert {"node_name", "start_time", "end_time", "duration_seconds"} <= set(item)
         assert all(isinstance(item[key], float) for key in ("start_time", "end_time", "duration_seconds"))
@@ -85,15 +86,37 @@ def test_verify_parallel_execution_accepts_overlapping_simulated_timeline():
         {"node_name": "weather", "start_time": 0.0, "end_time": 0.5, "duration_seconds": 0.5},
         {"node_name": "spot", "start_time": 0.5, "end_time": 1.0, "duration_seconds": 0.5},
         {"node_name": "booking", "start_time": 1.0, "end_time": 1.5, "duration_seconds": 0.5},
+        {"node_name": "traffic", "start_time": 1.5, "end_time": 2.0, "duration_seconds": 0.5},
     ]
     parallel_timeline = [
         {"node_name": "weather", "start_time": 0.0, "end_time": 0.5, "duration_seconds": 0.5},
         {"node_name": "spot", "start_time": 0.01, "end_time": 0.51, "duration_seconds": 0.5},
         {"node_name": "booking", "start_time": 0.02, "end_time": 0.52, "duration_seconds": 0.5},
+        {"node_name": "traffic", "start_time": 0.03, "end_time": 0.53, "duration_seconds": 0.5},
     ]
 
-    verified, reason = verify_parallel_execution(sequential_timeline, parallel_timeline)
+    verified, reason = verify_parallel_timeline({
+        "sequential": sequential_timeline,
+        "parallel": parallel_timeline,
+    })
 
     assert verified is True
+    assert isinstance(reason, str)
+    assert reason
+
+
+def test_verify_parallel_timeline_rejects_non_overlapping_simulated_data():
+    sequential = [
+        {"node_name": name, "start_time": index * 0.5, "end_time": (index + 1) * 0.5, "duration_seconds": 0.5}
+        for index, name in enumerate(("weather", "spot", "booking", "traffic"))
+    ]
+    not_parallel = [dict(item) for item in sequential]
+
+    verified, reason = verify_parallel_timeline({
+        "sequential": sequential,
+        "parallel": not_parallel,
+    })
+
+    assert verified is False
     assert isinstance(reason, str)
     assert reason

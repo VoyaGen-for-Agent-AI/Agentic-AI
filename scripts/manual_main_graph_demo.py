@@ -30,6 +30,7 @@ def main() -> int:
     if show_debug:
         print(f"Weather provider: {os.getenv('WEATHER_PROVIDER', 'llm')}")
         print(f"Traffic provider: {os.getenv('TRAFFIC_PROVIDER', 'llm')}")
+        print(f"Spot provider: {os.getenv('SPOT_PROVIDER', 'mock')}")
         if _env_enabled("USE_LIVE_WEATHER"):
             print("Weather live mode enabled")
         if _env_enabled("USE_LIVE_TRAFFIC"):
@@ -58,7 +59,7 @@ def main() -> int:
     )
 
     if show_debug:
-        for key in ("weather_result", "traffic_result", "itinerary_result"):
+        for key in ("weather_result", "spot_result", "traffic_result", "itinerary_result"):
             result = state.get(key, {})
             source = result.get("source", "unknown") if isinstance(result, dict) else "unknown"
             print(f"{key} source: {source}")
@@ -72,6 +73,7 @@ def main() -> int:
             "itinerary_result",
             "travel_result",
             "budget_result",
+            "e2b_validation_result",
         ):
             result = state.get(key, {})
             if isinstance(result, dict) and result.get("source"):
@@ -79,6 +81,10 @@ def main() -> int:
             print(f"{key}:")
             print(result)
             print()
+        print(f"generated_code exists: {bool(state.get('generated_code'))}")
+        print(f"execution_status: {state.get('execution_status', '')}")
+        print(f"sandbox_stdout: {state.get('sandbox_stdout', '')}")
+        print(f"sandbox_stderr: {state.get('sandbox_stderr', '')}")
 
     print("final_answer:")
     print(state.get("final_answer", ""))

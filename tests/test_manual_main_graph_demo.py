@@ -60,7 +60,9 @@ def test_main_invokes_app_graph_with_selected_query(monkeypatch, capsys):
     assert "Observability disabled" in output
     assert "Weather provider:" not in output
     assert "weather_result source:" not in output
+    assert "spot_result source:" not in output
     assert "trip_request:" not in output
+    assert "spot_result:" not in output
     assert "rule_based_parser" not in output
     assert captured["config"]["callbacks"] == []
 
@@ -124,6 +126,8 @@ def test_debug_mode_prints_provider_sources_and_raw_results(monkeypatch, capsys)
     output = capsys.readouterr().out
     assert "Weather provider: openweather" in output
     assert "Traffic provider: tavily" in output
+    assert "Spot provider:" in output
     assert "weather_result source: mock_fallback" in output
+    assert "spot_result source: mock_spot_data" in output
     assert "[trip_request] source: rule_based_parser" in output
     assert "trip_request:" in output

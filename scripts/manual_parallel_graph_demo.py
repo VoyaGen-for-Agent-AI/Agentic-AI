@@ -17,11 +17,11 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from agents.final_response import final_response_node
 from agents.workers.booking_worker import booking_node
 from agents.workers.budget_worker import budget_node
-from agents.workers.spot_worker import spot_node
-from agents.workers.traffic_worker import traffic_node
-from agents.workers.travel_worker import travel_node
+from agents.workers.spot_worker import build_mock_spot_result
+from agents.workers.traffic_worker import build_mock_traffic_result
+from agents.workers.travel_worker import build_fallback_itinerary_result
 from agents.workers.trip_parser_worker import trip_parser_node
-from agents.workers.weather_worker import weather_node
+from agents.workers.weather_worker import build_mock_weather_result
 from core.state import AgentState
 
 
@@ -71,7 +71,7 @@ def _result_only_node(
 
 
 def _demo_delay_seconds() -> float:
-    raw_value = os.getenv("PARALLEL_DEMO_DELAY_SECONDS", "").strip()
+    raw_value = os.getenv("PARALLEL_DEMO_DELAY_SECONDS", "").strip() or "0.5"
     if not raw_value:
         return 0.0
     try:
@@ -80,21 +80,59 @@ def _demo_delay_seconds() -> float:
         return 0.0
 
 
-weather_result_node = _result_only_node(weather_node, "weather_result")
-spot_result_node = _result_only_node(spot_node, "spot_result")
+def mock_weather_node(state: AgentState) -> dict[str, Any]:
+    return {"weather_result": build_mock_weather_result(state)}
+
+
+def mock_spot_node(state: AgentState) -> dict[str, Any]:
+    return {"spot_result": build_mock_spot_result(state)}
+
+
+def mock_traffic_node(state: AgentState) -> dict[str, Any]:
+    return {"traffic_result": build_mock_traffic_result(state)}
+
+
+weather_result_node = _result_only_node(mock_weather_node, "weather_result")
+spot_result_node = _result_only_node(mock_spot_node, "spot_result")
 booking_result_node = _result_only_node(booking_node, "booking_result")
+traffic_result_node = _result_only_node(mock_traffic_node, "traffic_result")
+
+
+def mock_travel_node(state: AgentState) -> dict[str, Any]:
+    itinerary = build_fallback_itinerary_result(state)
+    return {
+        "itinerary_result": itinerary,
+        "travel_result": itinerary,
+        "current_task": "travel",
+        "next_step": "e2b_validation",
+    }
+
+
+def skipped_e2b_validation_node(state: AgentState) -> dict[str, Any]:
+    return {
+        "e2b_validation_result": {
+            "validation_status": "skipped",
+            "issues": [],
+            "checks": {},
+            "recommendation": "Parallel demo uses deterministic mock validation.",
+            "source": "e2b_skipped",
+        },
+        "execution_status": "skipped",
+        "current_task": "e2b_validation",
+        "next_step": "budget",
+    }
 
 
 def join_results_node(state: AgentState) -> dict[str, Any]:
     """Confirm all independent branch results exist before traffic planning."""
     missing = [
         key
-        for key in ("weather_result", "spot_result", "booking_result")
+        for key in ("weather_result", "spot_result", "booking_result", "traffic_result")
         if not isinstance(state.get(key), dict) or not state.get(key)
     ]
     if missing:
         raise ValueError(f"Parallel result join missing: {', '.join(missing)}")
-    return {"current_task": "join_results", "next_step": "traffic"}
+    return {"current_task": "join_results", "next_step": "travel"}
 
 
 def build_sequential_graph():
@@ -103,8 +141,10 @@ def build_sequential_graph():
     workflow.add_node("weather", weather_result_node)
     workflow.add_node("spot", spot_result_node)
     workflow.add_node("booking", booking_result_node)
-    workflow.add_node("traffic", traffic_node)
-    workflow.add_node("travel", travel_node)
+    workflow.add_node("traffic", traffic_result_node)
+    workflow.add_node("join_results", join_results_node)
+    workflow.add_node("travel", mock_travel_node)
+    workflow.add_node("e2b_validation", skipped_e2b_validation_node)
     workflow.add_node("budget", budget_node)
     workflow.add_node("final_response", final_response_node)
 
@@ -113,8 +153,10 @@ def build_sequential_graph():
     workflow.add_edge("weather", "spot")
     workflow.add_edge("spot", "booking")
     workflow.add_edge("booking", "traffic")
-    workflow.add_edge("traffic", "travel")
-    workflow.add_edge("travel", "budget")
+    workflow.add_edge("traffic", "join_results")
+    workflow.add_edge("join_results", "travel")
+    workflow.add_edge("travel", "e2b_validation")
+    workflow.add_edge("e2b_validation", "budget")
     workflow.add_edge("budget", "final_response")
     workflow.add_edge("final_response", END)
     return workflow.compile()
@@ -126,9 +168,10 @@ def build_parallel_graph():
     workflow.add_node("weather", weather_result_node)
     workflow.add_node("spot", spot_result_node)
     workflow.add_node("booking", booking_result_node)
+    workflow.add_node("traffic", traffic_result_node)
     workflow.add_node("join_results", join_results_node)
-    workflow.add_node("traffic", traffic_node)
-    workflow.add_node("travel", travel_node)
+    workflow.add_node("travel", mock_travel_node)
+    workflow.add_node("e2b_validation", skipped_e2b_validation_node)
     workflow.add_node("budget", budget_node)
     workflow.add_node("final_response", final_response_node)
 
@@ -136,10 +179,11 @@ def build_parallel_graph():
     workflow.add_edge("trip_parser", "weather")
     workflow.add_edge("trip_parser", "spot")
     workflow.add_edge("trip_parser", "booking")
-    workflow.add_edge(["weather", "spot", "booking"], "join_results")
-    workflow.add_edge("join_results", "traffic")
-    workflow.add_edge("traffic", "travel")
-    workflow.add_edge("travel", "budget")
+    workflow.add_edge("trip_parser", "traffic")
+    workflow.add_edge(["weather", "spot", "booking", "traffic"], "join_results")
+    workflow.add_edge("join_results", "travel")
+    workflow.add_edge("travel", "e2b_validation")
+    workflow.add_edge("e2b_validation", "budget")
     workflow.add_edge("budget", "final_response")
     workflow.add_edge("final_response", END)
     return workflow.compile()
@@ -193,13 +237,13 @@ def verify_parallel_execution(
     sequential_timeline: list[dict[str, Any]],
     parallel_timeline: list[dict[str, Any]],
 ) -> tuple[bool, str]:
-    required_nodes = {"weather", "spot", "booking"}
+    required_nodes = {"weather", "spot", "booking", "traffic"}
     sequential = [item for item in sequential_timeline if item.get("node_name") in required_nodes]
     parallel = [item for item in parallel_timeline if item.get("node_name") in required_nodes]
     if {item.get("node_name") for item in sequential} != required_nodes:
-        return False, "sequential timeline 缺少 weather、spot 或 booking"
+        return False, "sequential timeline 缺少 weather、spot、booking 或 traffic"
     if {item.get("node_name") for item in parallel} != required_nodes:
-        return False, "parallel timeline 缺少 weather、spot 或 booking"
+        return False, "parallel timeline 缺少 weather、spot、booking 或 traffic"
 
     sequential_total = max(item["end_time"] for item in sequential) - min(item["start_time"] for item in sequential)
     parallel_total = max(item["end_time"] for item in parallel) - min(item["start_time"] for item in parallel)
@@ -219,6 +263,15 @@ def verify_parallel_execution(
     return verified, reason
 
 
+def verify_parallel_timeline(
+    timeline: dict[str, list[dict[str, Any]]]
+) -> tuple[bool, str]:
+    return verify_parallel_execution(
+        timeline.get("sequential", []),
+        timeline.get("parallel", []),
+    )
+
+
 def _print_timeline(label: str, timeline: list[dict[str, Any]]) -> None:
     print(f"[{label} timeline]")
     for item in timeline:
@@ -230,7 +283,7 @@ def _print_timeline(label: str, timeline: list[dict[str, Any]]) -> None:
         )
 
 
-def run_benchmark(runs: int = 10, warmup: int = 2) -> dict[str, float]:
+def run_benchmark(runs: int = 5, warmup: int = 1) -> dict[str, float]:
     if runs < 1:
         raise ValueError("runs must be at least 1")
     if warmup < 0:
@@ -285,21 +338,16 @@ def _print_sources(label: str, state: dict[str, Any]) -> None:
 
 def main() -> int:
     load_dotenv(PROJECT_ROOT / ".env")
-    for variable, label in (
-        ("USE_LIVE_WEATHER", "Weather"),
-        ("USE_LIVE_TRAFFIC", "Traffic"),
-        ("USE_LIVE_ITINERARY", "Itinerary"),
-    ):
-        if os.getenv(variable, "").strip().lower() in {"1", "true", "yes", "on"}:
-            print(f"{label} live mode enabled")
+    print("Deterministic mock latency mode enabled (no external API, LLM, or E2B calls)")
 
     sequential_state, sequential_time, sequential_timeline = run_with_timeline(sequential_graph)
     parallel_state, parallel_time, parallel_timeline = run_with_timeline(parallel_graph)
     saved_time = sequential_time - parallel_time
     reduction = (saved_time / sequential_time * 100) if sequential_time else 0.0
-    parallel_verified, verification_reason = verify_parallel_execution(
-        sequential_timeline, parallel_timeline
-    )
+    parallel_verified, verification_reason = verify_parallel_timeline({
+        "sequential": sequential_timeline,
+        "parallel": parallel_timeline,
+    })
 
     _print_timeline("sequential", sequential_timeline)
     _print_timeline("parallel", parallel_timeline)

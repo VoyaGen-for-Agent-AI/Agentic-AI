@@ -19,6 +19,7 @@ def test_main_graph_results_include_provenance(monkeypatch):
     monkeypatch.setenv("USE_LIVE_WEATHER", "0")
     monkeypatch.setenv("USE_LIVE_TRAFFIC", "0")
     monkeypatch.setenv("USE_LIVE_ITINERARY", "0")
+    monkeypatch.setenv("USE_LIVE_SPOT", "0")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("E2B_API_KEY", raising=False)
