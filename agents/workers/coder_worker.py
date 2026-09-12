@@ -34,18 +34,7 @@ def coder_node(state: AgentState):
     #     api_key=os.getenv("OPENAI_API_KEY") # type: ignore
     # )
     ##############付費#################
-    llm = ChatOpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        model="meta-llama/llama-3.3-70b-instruct",
-        api_key=os.getenv("OPENAI_API_KEY"), # type: ignore
-        extra_body={
-            "provider": {
-                "order": ["DeepInfra"],
-                "ignore": ["Nebius Token Factory","AkashML","NovitaAI","Parasail","SambaNova Turbo","Groq","Weight&Biases","Google Vertex", "Together","Cloudflare"],
-                "allow_fallbacks": True
-            }
-        } 
-    )
+    # LLM 的建立移到下方 try 內，理由見該處註解。
     ################################# 
 
     # 2. 抓取上一位專員 (如 Weather Worker) 提出的需求
@@ -67,6 +56,20 @@ def coder_node(state: AgentState):
     ]
 
     try:
+        # ChatOpenAI 的建構本身就會驗證憑證，缺金鑰時直接拋 OpenAIError。
+        # 放在 try 之外會讓整張圖中斷，而不是讓這個 stage 降級，因此改在這裡建立。
+        llm = ChatOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            model="meta-llama/llama-3.3-70b-instruct",
+            api_key=os.getenv("OPENAI_API_KEY"), # type: ignore
+            extra_body={
+                "provider": {
+                    "order": ["DeepInfra"],
+                    "ignore": ["Nebius Token Factory","AkashML","NovitaAI","Parasail","SambaNova Turbo","Groq","Weight&Biases","Google Vertex", "Together","Cloudflare"],
+                    "allow_fallbacks": True
+                }
+            } 
+        )
         response = llm.invoke(messages)
         content = response.content
 
