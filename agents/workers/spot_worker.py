@@ -249,7 +249,7 @@ def fetch_tavily_spots(
     source = "tavily_search"
     if len(spots) < 3:
         source = "tavily_search_with_mock_fallback"
-        mock_state = {
+        mock_state: AgentState = {
             "destination": destination,
             "preference": preference,
             "days": trip_request.get("days", 2),

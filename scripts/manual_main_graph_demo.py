@@ -10,6 +10,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from main import app_graph
 from core.observability import get_langfuse_callbacks
+from core.state import AgentState
 
 
 DEMO_PROMPT = "我想 7/18 到 7/19 從台北車站去台中兩天一夜，預算 6000，想要不要太趕、戶外景點，也需要住宿和預算估算"
@@ -42,7 +43,9 @@ def main() -> int:
     print(f"user_query: {user_query}")
     callbacks = get_langfuse_callbacks()
     print("Observability enabled" if callbacks else "Observability disabled")
-    initial_state = {"messages": [HumanMessage(content=user_query)]}
+    # 明確標註型別：字典字面值直接當參數傳時 Pyright 會雙向推論成 AgentState，
+    # 但先指派給變數就會被推成 dict[str, list[HumanMessage]]，因而對不上 TypedDict。
+    initial_state: AgentState = {"messages": [HumanMessage(content=user_query)]}
     state = app_graph.invoke(
         initial_state,
         config={

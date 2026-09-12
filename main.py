@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from agents.final_response import final_response_node
@@ -163,8 +164,9 @@ app_graph = workflow.compile()
 
 @app.get("/chat/{query}")
 def chat_test(query: str):
-    config = {"callbacks": get_langfuse_callbacks()}
-    result = app_graph.invoke({"messages": [HumanMessage(content=query)]}, config)  # type: ignore
+    config: RunnableConfig = {"callbacks": get_langfuse_callbacks()}
+    initial_state: AgentState = {"messages": [HumanMessage(content=query)]}
+    result = app_graph.invoke(initial_state, config)
 
     stages = []
     for log in result.get("stage_logs", []):

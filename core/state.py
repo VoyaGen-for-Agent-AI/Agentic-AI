@@ -4,7 +4,11 @@ import operator
 from langchain_core.messages import BaseMessage
 
 
-class AgentState(TypedDict):
+# total=False：LangGraph 的每個 node 回傳的都是「部分狀態」，由 graph 負責合併，
+# 沒有任何一個 node 會一次填滿所有欄位。若維持預設的 total=True，型別檢查器會把
+# 每一次 invoke / return 都判成缺欄位。子圖的 StageState 已經是 total=False，
+# 這裡對齊同樣的語意。注意：totality 純粹是靜態型別語意，對執行期行為毫無影響。
+class AgentState(TypedDict, total=False):
     # 儲存所有的對話紀錄
     messages: Annotated[Sequence[BaseMessage], operator.add]
 
