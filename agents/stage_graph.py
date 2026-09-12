@@ -43,6 +43,7 @@ class StageState(TypedDict, total=False):
     execution_status: str
     # parser 依 result_key 寫入其中之一
     weather_result: dict[str, Any]
+    spot_result: dict[str, Any]
     travel_result: dict[str, Any]
     booking_result: dict[str, Any]
     budget_result: dict[str, Any]
@@ -60,20 +61,45 @@ STAGE_LABELS = {
 }
 
 
+def _stage_parser_node(state: StageState) -> dict[str, Any]:
+    """把 parser 包一層並標註成 StageState。
+
+    LangGraph 會拿節點函式第一個參數的型別標註當作該節點的輸入 schema，只把標註裡
+    宣告過的欄位傳進去。`parser_node` 標的是 `AgentState`，而 `result_key` 只存在於
+    `StageState`，因此直接掛上去時 parser 收不到寫入目標，會回報
+    "Unable to determine result target."。這層包裝確保 result_key 會被傳進去。
+    """
+    return parser_node(state)  # type: ignore[arg-type]
+
+
+def _route_after_worker(state: StageState) -> str:
+    """子圖的第一個分歧點，同時支援兩種 worker 合約。
+
+    舊合約（2026-07-15 demo-safe 改寫之前）：worker 只產出一份「需求規格」並回傳
+    `next_step="coder"`，真正的取數工作交給 coder -> e2b_sandbox -> parser 這條鏈。
+    目前只有 `agents/workers/schedule_worker.py` 仍是這個形狀。
+
+    新合約：worker 自己走完「真實 API -> LLM -> mock」三層降級並直接產出 `*_result`，
+    此時不需要產碼鏈，直接結束子圖即可；worker 失敗（`FINISH`）同樣結束。
+
+    刻意只認 `next_step == "coder"` 這一個值，而不是列舉所有可能的下一棒名稱。
+    新合約的 worker 回傳的是「主線 pipeline 的下一個 stage」（例如 weather 回傳
+    `"spot"`），那是父圖層級的語意，子圖不該也無法解讀。
+    """
+    return "coder" if state.get("next_step") == "coder" else "done"
+
+
 def build_stage_subgraph(worker_node: Callable):
     """把 worker -> coder -> e2b_sandbox -> parser 組成一張可執行子圖。"""
     graph = StateGraph(StageState)
     graph.add_node("worker", worker_node)
     graph.add_node("coder", coder_node)
     graph.add_node("e2b_sandbox", sandbox_node)
-    graph.add_node("parser", parser_node)
+    graph.add_node("parser", _stage_parser_node)
 
     graph.set_entry_point("worker")
-    # worker 成功 -> coder；worker 失敗 (next_step=FINISH) -> 直接結束
     graph.add_conditional_edges(
-        "worker",
-        lambda s: s.get("next_step", "coder"),
-        {"coder": "coder", "final_response": END, "FINISH": END},
+        "worker", _route_after_worker, {"coder": "coder", "done": END}
     )
     # coder 成功 -> e2b_sandbox；coder 失敗 -> 結束
     graph.add_conditional_edges(
