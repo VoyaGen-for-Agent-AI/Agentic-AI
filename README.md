@@ -44,14 +44,43 @@
 只存在於子圖內部，不會冒泡到父圖。父圖只看得到各自不同的 result key，以及用
 `operator.add` 合併的 `messages` 與 `stage_logs`，因此平行分支不會互相覆蓋狀態。
 
+若不做這層隔離，travel 與 booking 平行執行時會在同一個 superstep 同時寫入沒有 reducer 的
+`generated_code`，LangGraph 會直接拋出 `InvalidUpdateError: At key 'generated_code':
+Can receive only one value per step`。
+
 `agents/supervisor.py` 提供一個**確定性**的調度器：用已完成的 stage 集合決定下一棒，
 並可回傳 list 做平行 fan-out。它刻意不用 LLM 決定路由，也刻意用「有沒有跑過」而不是
 「有沒有產出結果」判斷進度，確保某個 stage 失敗時流程仍會前進，不會無限重試。
 
-> **注意**：`app_graph` 目前走的是上方的線性流程。supervisor 調度與 travel / booking
-> 平行 fan-out 的架構實作在 `agents/stage_graph.py` 與 `agents/supervisor.py`，
-> 並由 `scripts/manual_parallel_graph_demo.py` 與 `tests/test_parallel_graph_demo.py`
-> 實際執行與 benchmark（含序列 vs 平行的時間軸重疊驗證），尚未接回主路徑。
+> **這套架構與目前主線的關係**
+>
+> `app_graph` 目前走的是上方的線性流程。`agents/stage_graph.py` 與 `agents/supervisor.py`
+> 這套子圖 + supervisor 架構，在 `5b6d352`（2026-07-11）到 `243eddd`（07-15）之間
+> 曾經就是 `main.py` 的主圖。
+>
+> 07-15 我們把 demo 路徑換成現在的線性流程。子圖路徑的每個 stage 都依賴「LLM 當場產出
+> 可執行的 Python」與「E2B 沙盒即時回應」這兩個外部條件，現場 demo 時等於兩個獨立的
+> 失敗點；線性流程兩者都不需要，沒有任何金鑰也能跑完全程。我們選擇了現場的確定性，
+> 代價是主線不再展示子圖與平行架構。
+>
+> 另外必須揭露：子圖鏈當時還有一個潛伏缺陷。LangGraph 會依節點函式第一個參數的型別
+> 標註過濾輸入狀態，而 `parser_node` 標註的是 `AgentState`，其中並未宣告 `result_key`，
+> 因此子圖裡的 parser 始終收不到寫入目標，回報 `Unable to determine result target.`，
+> 等於這條鏈從未真正產出過結構化結果。此缺陷於 2026-09-12 為子圖補上一層標註為
+> `StageState` 的 parser 包裝後修正，並由 `tests/test_stage_graph_isolation.py` 覆蓋。
+>
+> 那次改寫同時改變了 worker 的角色：原本 worker 產生一份需求規格交給 coder 寫程式
+> （回傳 `messages` 與 `next_step="coder"`），改寫後 worker 直接自行產出結果
+> （回傳 `*_result` 與下一個 stage 名稱）。六個 domain worker 中目前只有
+> `schedule_worker.py` 仍是舊合約，因此 2026-09-12 把子圖的 worker 路由改成**兩種合約
+> 都支援**：`next_step == "coder"` 才進產碼鏈，否則視為結果已備妥、直接結束子圖。
+>
+> 這套架構的端到端執行請跑 `scripts/manual_stage_graph_demo.py`，它會驗證六個 stage
+> 是否跑完、travel / booking 是否真的在不同執行緒平行、以及中繼欄位有沒有外流。
+>
+> `scripts/manual_parallel_graph_demo.py` 是**另外獨立建圖**的平行 benchmark，並未使用
+> 上述兩個模組；它的平行節點是注入固定延遲（`PARALLEL_DEMO_DELAY_SECONDS`，預設 0.5 秒）
+> 的 mock，量測的是 LangGraph 的併發排程行為，不是子圖隔離的效果。
 
 ---
 
@@ -100,7 +129,7 @@ cp .env.example .env
 poetry run pytest
 ```
 
-目前共 158 支測試，並由 `.github/workflows/main.yml` 在每次 push 時於 CI 執行。
+目前共 169 支測試，並由 `.github/workflows/main.yml` 在每次 push 時於 CI 執行。
 
 ### 4. 啟動後端
 
@@ -132,7 +161,8 @@ npm run dev
 | 腳本 | 用途 |
 |---|---|
 | `demo_run.py` | 用完整化的 DEMO_PROMPT 跑一次完整 pipeline，印出各 stage 紀錄與最終回覆 |
-| `manual_parallel_graph_demo.py` | 序列 vs 平行執行的 benchmark，含時間軸重疊驗證 |
+| `manual_stage_graph_demo.py` | 用 `stage_graph` + `supervisor` 跑完整架構，驗證平行 fan-out 與狀態隔離 |
+| `manual_parallel_graph_demo.py` | 序列 vs 平行執行的 benchmark（自建圖與延遲 mock，不使用 `stage_graph` / `supervisor`） |
 | `manual_langfuse_trace.py` | 確認 Langfuse 後台能看到完整 trace |
 | `manual_e2b_smoke_test.py` | 確認 E2B 沙盒連線與程式碼執行正常 |
 | `manual_e2b_error_handling_demo.py` | 展示沙盒執行失敗時的錯誤處理與降級 |
@@ -162,7 +192,7 @@ agents/
   final_response.py          最終回覆組裝與資料來源摘要
   workers/                   各領域 agent 與 coder / sandbox / parser 執行鏈
 prompts/                     各 agent 的 system prompt
-tests/                       158 支單元測試
+tests/                       169 支單元測試
 scripts/                     手動驗證與 demo 腳本
 frontend/                    Vue 3 + Vite 前端
 ```
