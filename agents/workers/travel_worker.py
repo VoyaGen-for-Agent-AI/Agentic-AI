@@ -27,10 +27,12 @@ def _extract_json(content: str) -> str:
 
 
 def _last_user_request(state: AgentState) -> str:
-    if state.get("user_query"):
-        return str(state["user_query"])
-    if state.get("messages"):
-        return str(state["messages"][0].content)
+    user_query = state.get("user_query")
+    if user_query:
+        return str(user_query)
+    messages = state.get("messages") or []
+    if messages:
+        return str(messages[0].content)
     return "請規劃台中兩天一夜行程。"
 
 

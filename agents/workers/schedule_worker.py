@@ -5,9 +5,20 @@ from core.state import AgentState
 from prompts.schedule_prompt import SCHEDULE_PROMPT
 import time
 
+
+# 與 coder_worker 相同的節流開關，見該檔說明；預設關閉，由 LLM_THROTTLE_SECONDS 控制。
+def _throttle_seconds() -> float:
+    try:
+        return max(0.0, float(os.getenv("LLM_THROTTLE_SECONDS", "0")))
+    except ValueError:
+        return 0.0
+
+
 def schedule_node(state: AgentState):
     print("[Schedule Worker] 正在彙整景點與交通資訊，規劃時間軸...")
-    time.sleep(5)
+    throttle = _throttle_seconds()
+    if throttle:
+        time.sleep(throttle)
 
     # 1. 初始化 Schedule 專員的大腦
 #     llm = ChatOpenAI(
@@ -35,9 +46,14 @@ def schedule_node(state: AgentState):
 
     # 2. 把對話紀錄中，Travel / Traffic 專員已經產出的規格書內容彙整成字串，
     #    讓 LLM 能從中找出真實的景點與交通資料（不可捏造）
-    user_input = state["messages"][0].content
+    messages = state.get("messages") or []
+    if not messages:
+        print("[Schedule Worker] 沒有可用的對話紀錄，無法產生規格。")
+        return {"next_step": "FINISH"}
+
+    user_input = messages[0].content
     history_context = "\n".join(
-        f"[{msg.type}] {msg.content}" for msg in state["messages"]
+        f"[{msg.type}] {msg.content}" for msg in messages
     )
 
     # 3. 組裝訊息交給 LLM
