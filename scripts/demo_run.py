@@ -1,11 +1,20 @@
-"""Demo 入口：用完整化後的 DEMO_PROMPT 跑一次完整 pipeline。
+"""Demo 入口：用完整化後的 DEMO_PROMPT 跑一次 main.py 的完整 pipeline。
 
-流程：supervisor → budget → weather → [travel ∥ booking] → traffic → scheduler
-      → final_response
+實際流程（對齊 main.py 的 app_graph）：
 
-注意：這會實際呼叫各 worker 的 LLM 與 E2B sandbox、以及外部 API
-(OpenWeather / Tavily / 交通部 TDX)，請先在 .env 設定好對應金鑰
-（含 E2B_API_KEY 與 TDX_CLIENT_ID / TDX_CLIENT_SECRET）。
+    trip_parser -> weather -> spot -> booking -> traffic -> travel
+                -> e2b_validation -> budget -> final_response
+
+各 stage 都有「真實 API -> LLM 生成 -> 內建 mock」三層降級，因此**沒有金鑰也跑得完**，
+只是結果會標示成 mock。若要看到真實資料，請在 .env 依需求設定：
+
+- OPENROUTER_API_KEY 或 OPENAI_API_KEY：LLM 生成（coder / weather / spot / traffic / itinerary）
+- OPENWEATHER_API_KEY：搭配 USE_LIVE_WEATHER=1 與 WEATHER_PROVIDER=openweather
+- TAVILY_API_KEY：搭配 USE_LIVE_TRAFFIC=1 / USE_LIVE_SPOT=1 等旗標
+- E2B_API_KEY：e2b_validation stage 的沙盒檢查，未設定時該 stage 會標成 skipped
+- LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY：Langfuse trace，未設定時自動略過
+
+執行方式：poetry run python scripts/demo_run.py
 """
 
 import os
@@ -22,19 +31,31 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from prompts.demo_prompt import DEMO_PROMPT  # noqa: E402
 
 
+# 缺少這些金鑰不會讓 pipeline 中斷，只會讓對應 stage 退回 mock / skipped，
+# 因此一律以提醒處理，不直接結束程式。
+OPTIONAL_KEYS = (
+    ("OPENROUTER_API_KEY / OPENAI_API_KEY", "LLM 生成將全面退回 mock"),
+    ("OPENWEATHER_API_KEY", "天氣 stage 無法取得真實預報"),
+    ("TAVILY_API_KEY", "景點 / 交通 stage 無法取得搜尋佐證"),
+    ("E2B_API_KEY", "e2b_validation stage 會標記為 skipped"),
+)
+
+
+def _missing(key_label: str) -> bool:
+    """key_label 允許用 ' / ' 列出多個等效金鑰，任一個有值就算有設定。"""
+    return not any(os.getenv(name.strip()) for name in key_label.split("/"))
+
+
 def main() -> int:
     load_dotenv(PROJECT_ROOT / ".env")
 
-    if not os.getenv("OPENAI_API_KEY"):
-        print("缺少 OPENAI_API_KEY，請先在 .env 設定後再執行。")
-        return 1
-
-    for optional in ("E2B_API_KEY", "TDX_CLIENT_ID", "TDX_CLIENT_SECRET"):
-        if not os.getenv(optional):
-            print(f"⚠️  提醒：未設定 {optional}，相關 stage 可能無法取得真實結果。")
+    for key_label, consequence in OPTIONAL_KEYS:
+        if _missing(key_label):
+            print(f"提醒：未設定 {key_label}，{consequence}。")
 
     try:
-        from main import app_graph, langfuse_handler
+        from core.observability import get_langfuse_callbacks
+        from main import app_graph
     except Exception as exc:
         print(f"無法載入 main.py 的 app_graph：{exc}")
         return 1
@@ -46,7 +67,7 @@ def main() -> int:
 
     result = app_graph.invoke(
         {"messages": [HumanMessage(content=DEMO_PROMPT)]},
-        config={"callbacks": [langfuse_handler]},
+        config={"callbacks": get_langfuse_callbacks()},
     )
 
     print("\n===== 各 stage 執行紀錄 (stage_logs) =====")
